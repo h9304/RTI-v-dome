@@ -15,6 +15,27 @@
       border-radius: 10px;
       z-index: 10;
     }
+    #flashToggle {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(0, 0, 0, 0.6);
+      color: white;
+      padding: 6px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: bold;
+      z-index: 10;
+    }
+    .label {
+      position: absolute;
+      color: white;
+      background-color: rgba(0, 0, 0, 0.7);
+      padding: 2px 4px;
+      border-radius: 4px;
+      font-size: 12px;
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -22,17 +43,23 @@
     <label>Target Size (mm): <input type="number" id="targetSize" value="100" /></label><br />
     <label>Size Multiplier: <input type="number" id="sizeMultiplier" value="3" step="0.1" /></label><br />
     <label>Azimuths (comma-separated deg): <input type="text" id="azimuths" value="0,45,90,135,180,225,270,315" /></label><br />
-    <label>Elevations (comma-separated deg): <input type="text" id="elevations" value="45" /></label><br />
+    <label>Elevations (comma-separated deg): <input type="text" id="elevations" value="30,45,60" /></label><br />
     <button onclick="generateDome()">Generate Dome</button>
   </div>
+  <div id="flashToggle" onclick="toggleFlash()">Flash OFF</div>
 
   <script type="module">
     import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
     import { ARButton } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/webxr/ARButton.js';
+    import { DragControls } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/DragControls.js';
 
     let camera, scene, renderer;
     let controller;
     let domeGroup = null;
+    let raycaster = new THREE.Raycaster();
+    let pointer = new THREE.Vector2();
+    let flashOn = false;
+    let videoTrack = null;
 
     init();
 
@@ -49,34 +76,60 @@
       controller = renderer.xr.getController(0);
       scene.add(controller);
 
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }).then(stream => {
+        videoTrack = stream.getVideoTracks()[0];
+      });
+
+      window.addEventListener('click', onDocumentClick);
+
       renderer.setAnimationLoop(() => {
         renderer.render(scene, camera);
       });
     }
 
+    function toggleFlash() {
+      if (!videoTrack) return;
+      const capabilities = videoTrack.getCapabilities();
+      if (!capabilities.torch) {
+        alert("Flashlight not supported on this device.");
+        return;
+      }
+      flashOn = !flashOn;
+      videoTrack.applyConstraints({ advanced: [{ torch: flashOn }] });
+      document.getElementById("flashToggle").textContent = flashOn ? "Flash ON" : "Flash OFF";
+    }
+
+    function onDocumentClick(event) {
+      pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+      pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
+      raycaster.setFromCamera(pointer, camera);
+
+      const intersects = raycaster.intersectObjects(scene.children, true);
+      if (intersects.length > 0) {
+        const object = intersects[0].object;
+        if (object.userData.label) {
+          alert(object.userData.label);
+        }
+      }
+    }
+
     window.generateDome = function () {
       const targetSize = parseFloat(document.getElementById("targetSize").value);
       const multiplier = parseFloat(document.getElementById("sizeMultiplier").value);
-      const azimuths = document.getElementById("azimuths").value
-        .split(',').map(val => parseFloat(val.trim())).filter(val => !isNaN(val));
-      const elevations = document.getElementById("elevations").value
-        .split(',').map(val => parseFloat(val.trim())).filter(val => !isNaN(val));
+      const azimuths = document.getElementById("azimuths").value.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n));
+      const elevations = document.getElementById("elevations").value.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n));
 
       const radius = (targetSize / 1000) * multiplier;
 
-      if (domeGroup) {
-        scene.remove(domeGroup);
-      }
+      if (domeGroup) scene.remove(domeGroup);
       domeGroup = new THREE.Group();
 
-      // Create Dome Geometry
       const outerGeometry = new THREE.SphereGeometry(radius, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2);
       const innerGeometry = new THREE.SphereGeometry(radius - 0.01, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2);
       const domeMaterial = new THREE.MeshStandardMaterial({ color: 0x000000, transparent: true, opacity: 0.3, side: THREE.DoubleSide });
       domeGroup.add(new THREE.Mesh(outerGeometry, domeMaterial));
       domeGroup.add(new THREE.Mesh(innerGeometry, domeMaterial));
 
-      // Create markers for each azimuth and elevation pair
       const markerGeometry = new THREE.SphereGeometry(0.03, 16, 16);
       const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
 
@@ -90,29 +143,17 @@
 
           const marker = new THREE.Mesh(markerGeometry, markerMaterial);
           marker.position.set(x, y, z);
+          marker.userData.label = `${azimuth}° / ${elevation}°`;
           domeGroup.add(marker);
-
-          const canvas = document.createElement('canvas');
-          canvas.width = 128;
-          canvas.height = 32;
-          const context = canvas.getContext('2d');
-          context.fillStyle = 'white';
-          context.font = '20px sans-serif';
-          context.fillText(`${azimuth}° / ${elevation}°`, 10, 24);
-
-          const texture = new THREE.CanvasTexture(canvas);
-          const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
-          const sprite = new THREE.Sprite(spriteMaterial);
-          sprite.scale.set(0.3, 0.1, 1);
-          sprite.position.set(x, y + 0.05, z);
-          domeGroup.add(sprite);
         });
       });
 
-      // Place dome in front of camera
       const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
       domeGroup.position.copy(camera.position).add(direction.multiplyScalar(0.5));
+
       scene.add(domeGroup);
+
+      const dragControls = new DragControls([domeGroup], camera, renderer.domElement);
     };
   </script>
 </body>
