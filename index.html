@@ -19,8 +19,9 @@
 </head>
 <body>
   <div id="ui">
-    <label>Radius: <input type="number" id="radius" value="1" step="0.1" /></label><br />
-    <label>Azimuth (deg): <input type="number" id="azimuth" value="45" /></label><br />
+    <label>Target Size (mm): <input type="number" id="targetSize" value="100" /></label><br />
+    <label>Size Multiplier: <input type="number" id="sizeMultiplier" value="3" step="0.1" /></label><br />
+    <label>Azimuths (comma-separated deg): <input type="text" id="azimuths" value="0,45,90,135,180,225,270,315" /></label><br />
     <label>Elevation (deg): <input type="number" id="elevation" value="45" /></label><br />
     <button onclick="generateDome()">Generate Dome</button>
   </div>
@@ -32,6 +33,7 @@
     let camera, scene, renderer;
     let controller;
     let base = null;
+    let domeGroup = null;
 
     init();
 
@@ -50,8 +52,12 @@
       controller.addEventListener('select', (event) => {
         if (!base) {
           base = new THREE.Group();
-          base.position.set(0, 0, -1).applyMatrix4(controller.matrixWorld);
+          base.position.setFromMatrixPosition(controller.matrixWorld);
           scene.add(base);
+
+          if (domeGroup) {
+            base.add(domeGroup);
+          }
         }
       });
       scene.add(controller);
@@ -62,37 +68,64 @@
     }
 
     window.generateDome = function () {
-      if (!base) {
-        alert("Please tap in AR view to set the center.");
-        return;
-      }
-
-      const radius = parseFloat(document.getElementById("radius").value);
-      const azimuth = parseFloat(document.getElementById("azimuth").value);
+      const targetSize = parseFloat(document.getElementById("targetSize").value);
+      const multiplier = parseFloat(document.getElementById("sizeMultiplier").value);
       const elevation = parseFloat(document.getElementById("elevation").value);
+      const azimuths = document.getElementById("azimuths").value
+        .split(',')
+        .map(val => parseFloat(val.trim()))
+        .filter(val => !isNaN(val));
 
-      // Clear previous dome/marker
-      base.clear();
+      const radius = (targetSize / 1000) * multiplier;
 
-      // Create Dome (upper hemisphere wireframe)
-      const domeGeometry = new THREE.SphereGeometry(radius, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2);
-      const domeMaterial = new THREE.MeshBasicMaterial({ color: 0x0077ff, wireframe: true });
-      const dome = new THREE.Mesh(domeGeometry, domeMaterial);
-      base.add(dome);
+      if (domeGroup) domeGroup.clear();
+      domeGroup = new THREE.Group();
 
-      // Convert spherical to cartesian for marker
-      const theta = THREE.MathUtils.degToRad(azimuth);
-      const phi = THREE.MathUtils.degToRad(elevation);
-      const x = radius * Math.cos(phi) * Math.sin(theta);
-      const y = radius * Math.sin(phi);
-      const z = radius * Math.cos(phi) * Math.cos(theta);
+      // Dome with thickness
+      const outerGeometry = new THREE.SphereGeometry(radius, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2);
+      const innerGeometry = new THREE.SphereGeometry(radius - 0.01, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2);
+      const domeMaterial = new THREE.MeshStandardMaterial({ color: 0x000000, transparent: true, opacity: 0.3, side: THREE.DoubleSide });
+      const outerMesh = new THREE.Mesh(outerGeometry, domeMaterial);
+      const innerMesh = new THREE.Mesh(innerGeometry, domeMaterial);
 
-      // Marker
+      domeGroup.add(outerMesh);
+      domeGroup.add(innerMesh);
+
+      // Light markers with labels
       const markerGeometry = new THREE.SphereGeometry(0.03, 16, 16);
       const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-      const marker = new THREE.Mesh(markerGeometry, markerMaterial);
-      marker.position.set(x, y, z);
-      base.add(marker);
+      const phi = THREE.MathUtils.degToRad(elevation);
+
+      azimuths.forEach((azimuth, index) => {
+        const theta = THREE.MathUtils.degToRad(azimuth);
+        const x = radius * Math.cos(phi) * Math.sin(theta);
+        const y = radius * Math.sin(phi);
+        const z = radius * Math.cos(phi) * Math.cos(theta);
+
+        const marker = new THREE.Mesh(markerGeometry, markerMaterial);
+        marker.position.set(x, y, z);
+        domeGroup.add(marker);
+
+        const labelDiv = document.createElement('div');
+        labelDiv.style.position = 'absolute';
+        labelDiv.style.color = 'white';
+        labelDiv.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+        labelDiv.style.padding = '2px 4px';
+        labelDiv.style.borderRadius = '4px';
+        labelDiv.innerText = `${azimuth}\u00b0 / ${elevation}\u00b0`;
+        labelDiv.style.zIndex = '100';
+
+        const labelObject = new THREE.CSS2DObject(labelDiv);
+        labelObject.position.set(x, y + 0.05, z);
+        domeGroup.add(labelObject);
+      });
+
+      if (base) {
+        base.clear();
+        base.add(domeGroup);
+      } else {
+        alert("Please tap in AR view to set the center.");
+      }
     };
   </script>
 </body>
