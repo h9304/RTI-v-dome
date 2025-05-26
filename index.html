@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WebXR AR Dome</title>
+  <style>
+    body { margin: 0; overflow: hidden; font-family: sans-serif; }
+    #ui {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(255, 255, 255, 0.9);
+      padding: 10px;
+      border-radius: 10px;
+      z-index: 10;
+    }
+  </style>
+</head>
+<body>
+  <div id="ui">
+    <label>Radius: <input type="number" id="radius" value="1" step="0.1" /></label><br />
+    <label>Azimuth (deg): <input type="number" id="azimuth" value="45" /></label><br />
+    <label>Elevation (deg): <input type="number" id="elevation" value="45" /></label><br />
+    <button onclick="generateDome()">Generate Dome</button>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+    import { ARButton } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/webxr/ARButton.js';
+
+    let camera, scene, renderer;
+    let controller;
+    let base = null;
+
+    init();
+
+    function init() {
+      scene = new THREE.Scene();
+
+      camera = new THREE.PerspectiveCamera();
+
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.xr.enabled = true;
+      document.body.appendChild(renderer.domElement);
+      document.body.appendChild(ARButton.createButton(renderer, { requiredFeatures: ['hit-test'] }));
+
+      controller = renderer.xr.getController(0);
+      controller.addEventListener('select', (event) => {
+        if (!base) {
+          base = new THREE.Group();
+          base.position.set(0, 0, -1).applyMatrix4(controller.matrixWorld);
+          scene.add(base);
+        }
+      });
+      scene.add(controller);
+
+      renderer.setAnimationLoop(() => {
+        renderer.render(scene, camera);
+      });
+    }
+
+    window.generateDome = function () {
+      if (!base) {
+        alert("Please tap in AR view to set the center.");
+        return;
+      }
+
+      const radius = parseFloat(document.getElementById("radius").value);
+      const azimuth = parseFloat(document.getElementById("azimuth").value);
+      const elevation = parseFloat(document.getElementById("elevation").value);
+
+      // Clear previous dome/marker
+      base.clear();
+
+      // Create Dome (upper hemisphere wireframe)
+      const domeGeometry = new THREE.SphereGeometry(radius, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2);
+      const domeMaterial = new THREE.MeshBasicMaterial({ color: 0x0077ff, wireframe: true });
+      const dome = new THREE.Mesh(domeGeometry, domeMaterial);
+      base.add(dome);
+
+      // Convert spherical to cartesian for marker
+      const theta = THREE.MathUtils.degToRad(azimuth);
+      const phi = THREE.MathUtils.degToRad(elevation);
+      const x = radius * Math.cos(phi) * Math.sin(theta);
+      const y = radius * Math.sin(phi);
+      const z = radius * Math.cos(phi) * Math.cos(theta);
+
+      // Marker
+      const markerGeometry = new THREE.SphereGeometry(0.03, 16, 16);
+      const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+      const marker = new THREE.Mesh(markerGeometry, markerMaterial);
+      marker.position.set(x, y, z);
+      base.add(marker);
+    };
+  </script>
+</body>
+</html>
