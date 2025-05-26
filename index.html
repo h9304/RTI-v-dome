@@ -22,7 +22,7 @@
     <label>Target Size (mm): <input type="number" id="targetSize" value="100" /></label><br />
     <label>Size Multiplier: <input type="number" id="sizeMultiplier" value="3" step="0.1" /></label><br />
     <label>Azimuths (comma-separated deg): <input type="text" id="azimuths" value="0,45,90,135,180,225,270,315" /></label><br />
-    <label>Elevation (deg): <input type="number" id="elevation" value="45" /></label><br />
+    <label>Elevations (comma-separated deg): <input type="text" id="elevations" value="45" /></label><br />
     <button onclick="generateDome()">Generate Dome</button>
   </div>
 
@@ -32,34 +32,21 @@
 
     let camera, scene, renderer;
     let controller;
-    let base = null;
     let domeGroup = null;
 
     init();
 
     function init() {
       scene = new THREE.Scene();
-
       camera = new THREE.PerspectiveCamera();
 
       renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
       renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.xr.enabled = true;
       document.body.appendChild(renderer.domElement);
-      document.body.appendChild(ARButton.createButton(renderer, { requiredFeatures: ['hit-test'] }));
+      document.body.appendChild(ARButton.createButton(renderer));
 
       controller = renderer.xr.getController(0);
-      controller.addEventListener('select', (event) => {
-        if (!base) {
-          base = new THREE.Group();
-          base.position.setFromMatrixPosition(controller.matrixWorld);
-          scene.add(base);
-
-          if (domeGroup) {
-            base.add(domeGroup);
-          }
-        }
-      });
       scene.add(controller);
 
       renderer.setAnimationLoop(() => {
@@ -70,62 +57,62 @@
     window.generateDome = function () {
       const targetSize = parseFloat(document.getElementById("targetSize").value);
       const multiplier = parseFloat(document.getElementById("sizeMultiplier").value);
-      const elevation = parseFloat(document.getElementById("elevation").value);
       const azimuths = document.getElementById("azimuths").value
-        .split(',')
-        .map(val => parseFloat(val.trim()))
-        .filter(val => !isNaN(val));
+        .split(',').map(val => parseFloat(val.trim())).filter(val => !isNaN(val));
+      const elevations = document.getElementById("elevations").value
+        .split(',').map(val => parseFloat(val.trim())).filter(val => !isNaN(val));
 
       const radius = (targetSize / 1000) * multiplier;
 
-      if (domeGroup) domeGroup.clear();
+      if (domeGroup) {
+        scene.remove(domeGroup);
+      }
       domeGroup = new THREE.Group();
 
-      // Dome with thickness
+      // Create Dome Geometry
       const outerGeometry = new THREE.SphereGeometry(radius, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2);
       const innerGeometry = new THREE.SphereGeometry(radius - 0.01, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2);
       const domeMaterial = new THREE.MeshStandardMaterial({ color: 0x000000, transparent: true, opacity: 0.3, side: THREE.DoubleSide });
-      const outerMesh = new THREE.Mesh(outerGeometry, domeMaterial);
-      const innerMesh = new THREE.Mesh(innerGeometry, domeMaterial);
+      domeGroup.add(new THREE.Mesh(outerGeometry, domeMaterial));
+      domeGroup.add(new THREE.Mesh(innerGeometry, domeMaterial));
 
-      domeGroup.add(outerMesh);
-      domeGroup.add(innerMesh);
-
-      // Light markers with labels
+      // Create markers for each azimuth and elevation pair
       const markerGeometry = new THREE.SphereGeometry(0.03, 16, 16);
       const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-      const phi = THREE.MathUtils.degToRad(elevation);
 
-      azimuths.forEach((azimuth, index) => {
-        const theta = THREE.MathUtils.degToRad(azimuth);
-        const x = radius * Math.cos(phi) * Math.sin(theta);
-        const y = radius * Math.sin(phi);
-        const z = radius * Math.cos(phi) * Math.cos(theta);
+      azimuths.forEach(azimuth => {
+        elevations.forEach(elevation => {
+          const theta = THREE.MathUtils.degToRad(azimuth);
+          const phi = THREE.MathUtils.degToRad(elevation);
+          const x = radius * Math.cos(phi) * Math.sin(theta);
+          const y = radius * Math.sin(phi);
+          const z = radius * Math.cos(phi) * Math.cos(theta);
 
-        const marker = new THREE.Mesh(markerGeometry, markerMaterial);
-        marker.position.set(x, y, z);
-        domeGroup.add(marker);
+          const marker = new THREE.Mesh(markerGeometry, markerMaterial);
+          marker.position.set(x, y, z);
+          domeGroup.add(marker);
 
-        const labelDiv = document.createElement('div');
-        labelDiv.style.position = 'absolute';
-        labelDiv.style.color = 'white';
-        labelDiv.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
-        labelDiv.style.padding = '2px 4px';
-        labelDiv.style.borderRadius = '4px';
-        labelDiv.innerText = `${azimuth}\u00b0 / ${elevation}\u00b0`;
-        labelDiv.style.zIndex = '100';
+          const canvas = document.createElement('canvas');
+          canvas.width = 128;
+          canvas.height = 32;
+          const context = canvas.getContext('2d');
+          context.fillStyle = 'white';
+          context.font = '20px sans-serif';
+          context.fillText(`${azimuth}° / ${elevation}°`, 10, 24);
 
-        const labelObject = new THREE.CSS2DObject(labelDiv);
-        labelObject.position.set(x, y + 0.05, z);
-        domeGroup.add(labelObject);
+          const texture = new THREE.CanvasTexture(canvas);
+          const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+          const sprite = new THREE.Sprite(spriteMaterial);
+          sprite.scale.set(0.3, 0.1, 1);
+          sprite.position.set(x, y + 0.05, z);
+          domeGroup.add(sprite);
+        });
       });
 
-      if (base) {
-        base.clear();
-        base.add(domeGroup);
-      } else {
-        alert("Please tap in AR view to set the center.");
-      }
+      // Place dome in front of camera
+      const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+      domeGroup.position.copy(camera.position).add(direction.multiplyScalar(0.5));
+      scene.add(domeGroup);
     };
   </script>
 </body>
