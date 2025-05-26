@@ -1,137 +1,187 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>WebXR AR Dome v2</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebXR AR Dome</title>
   <style>
-    body { margin:0; overflow:hidden; font-family: sans-serif; }
-    #ui, #flashBtn {
-      position: absolute; z-index: 10; background: rgba(255,255,255,0.9); padding:10px; border-radius:8px;
+    body { margin: 0; overflow: hidden; font-family: sans-serif; }
+    #ui {
+      position: absolute; top: 10px; left: 10px;
+      background: rgba(255,255,255,0.9); padding: 10px; border-radius: 8px;
+      z-index: 10; max-width: 200px;
     }
-    #ui { top:10px; left:10px; }
-    #flashBtn { top:10px; right:10px; cursor: pointer; }
-    button { display:block; width:100%; margin-top:8px; }
-    .ar-button { position: absolute !important; bottom: 20px !important; left: calc(50% - 50px) !important; }
+    #ui label { display: block; margin-bottom: 6px; font-size: 14px; }
+    #flashBtn {
+      position: absolute; top: 10px; right: 10px;
+      background: rgba(0,0,0,0.6); color: white; padding: 8px;
+      border-radius: 6px; font-size: 14px; cursor: pointer; z-index: 10;
+    }
+    .ar-button {
+      position: absolute !important; bottom: 20px !important;
+      left: calc(50% - 50px) !important; width: 100px !important;
+      z-index: 10;
+    }
   </style>
 </head>
 <body>
   <div id="ui">
-    <label>Target Size (mm): <input type="number" id="targetSize" value="100" /></label><br/>
-    <label>Multiplier: <input type="number" id="sizeMultiplier" value="3" step="0.1"/></label><br/>
-    <label>Azimuths (deg): <input type="text" id="azimuths" value="0,45,90,135,180,225,270,315"/></label><br/>
-    <label>Elevations (deg): <input type="text" id="elevations" value="30,45,60"/></label><br/>
-    <button id="genBtn">Generate Dome</button>
+    <label>Target Size (mm):<br><input type="number" id="targetSize" value="100" style="width:100%;"></label>
+    <label>Dome Multiple:<br><select id="sizeMultiplier" style="width:100%;"><option value="2">2×</option><option value="3" selected>3×</option><option value="4">4×</option></select></label>
+    <label>Azimuths (deg):<br><input type="text" id="azimuths" value="0,45,90,135,180,225,270,315" style="width:100%;"></label>
+    <label>Elevations (deg):<br><input type="text" id="elevations" value="30,45,60" style="width:100%;"></label>
   </div>
   <button id="flashBtn">Flash OFF</button>
-
   <script type="module">
     import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
     import { ARButton } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/webxr/ARButton.js';
     import { DragControls } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/DragControls.js';
 
-    let camera, scene, renderer, controller;
+    let camera, scene, renderer;
     let domeGroup = null;
-    let raycaster = new THREE.Raycaster();
-    let pointer = new THREE.Vector2();
+    let hitTestSource = null, localSpace = null;
+    let raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2();
     let videoTrack = null, torchOn = false;
-    const ui = document.getElementById('ui');
-    const flashBtn = document.getElementById('flashBtn');
 
     init();
 
     function init() {
       scene = new THREE.Scene();
       camera = new THREE.PerspectiveCamera();
-      renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
       renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.xr.enabled = true;
       document.body.appendChild(renderer.domElement);
 
-      // ARButton with hit-test for AR session
-      const arButton = ARButton.createButton(renderer, { requiredFeatures: ['hit-test'] });
-      arButton.classList.add('ar-button');
-      document.body.appendChild(arButton);
+      // ARButton 생성
+      const arBtn = ARButton.createButton(renderer, { requiredFeatures: ['hit-test'] });
+      arBtn.classList.add('ar-button');
+      document.body.appendChild(arBtn);
 
-      // Controller for future use
-      controller = renderer.xr.getController(0);
-      scene.add(controller);
+      // AR 세션 시작 시 HitTest 원소 요청
+      renderer.xr.addEventListener('sessionstart', async () => {
+        const session = renderer.xr.getSession();
+        const viewerSpace = await session.requestReferenceSpace('viewer');
+        hitTestSource = await session.requestHitTestSource({ space: viewerSpace });
+        localSpace = await session.requestReferenceSpace('local-floor');
+      });
 
-      window.addEventListener('click', onClick);
-      document.getElementById('genBtn').addEventListener('click', generateDome);
-
+      window.addEventListener('click', onDocumentClick);
+      document.getElementById('flashBtn').addEventListener('click', toggleFlash);
       setupTorch();
 
-      renderer.setAnimationLoop(() => {
+      renderer.setAnimationLoop((time, frame) => {
+        if (frame && hitTestSource && !domeGroup) {
+          const hitResults = frame.getHitTestResults(hitTestSource);
+          if (hitResults.length > 0) {
+            const pose = hitResults[0].getPose(localSpace);
+            generateDome(new THREE.Vector3().set(pose.transform.position.x, pose.transform.position.y, pose.transform.position.z));
+          }
+        }
         renderer.render(scene, camera);
       });
     }
 
     async function setupTorch() {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' }});
-        const [track] = stream.getVideoTracks();
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+        const track = stream.getVideoTracks()[0];
         const caps = track.getCapabilities();
         if (caps.torch) {
           videoTrack = track;
-          flashBtn.disabled = false;
-          flashBtn.addEventListener('click', toggleFlash);
+          document.getElementById('flashBtn').disabled = false;
         } else {
-          flashBtn.textContent = 'No Torch';
+          document.getElementById('flashBtn').textContent = 'No Torch';
+          document.getElementById('flashBtn').disabled = true;
         }
-      } catch(err) {
-        flashBtn.textContent = 'No Torch';
+      } catch (e) {
+        document.getElementById('flashBtn').textContent = 'No Torch';
+        document.getElementById('flashBtn').disabled = true;
       }
     }
 
-    function toggleFlash(){
+    function toggleFlash() {
       if (!videoTrack) return;
       torchOn = !torchOn;
-      videoTrack.applyConstraints({ advanced:[{ torch: torchOn }] })
-        .then(() => flashBtn.textContent = torchOn? 'Flash ON':'Flash OFF')
-        .catch(()=> flashBtn.textContent='Error');
+      videoTrack.applyConstraints({ advanced: [{ torch: torchOn }] })
+        .then(() => document.getElementById('flashBtn').textContent = torchOn ? 'Flash ON' : 'Flash OFF')
+        .catch(() => alert('Flash control not supported'));
     }
 
-    function onClick(e){
-      pointer.x = (e.clientX/window.innerWidth)*2-1;
-      pointer.y = -(e.clientY/window.innerHeight)*2+1;
+    function onDocumentClick(event) {
+      pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+      pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
       raycaster.setFromCamera(pointer, camera);
-      const hits = raycaster.intersectObjects(scene.children,true);
-      if (hits.length>0 && hits[0].object.userData.label) {
-        alert(hits[0].object.userData.label);
+      const intersects = raycaster.intersectObjects(scene.children, true);
+      if (intersects.length > 0) {
+        const obj = intersects[0].object;
+        if (obj.userData.azimuth != null) {
+          // 토글 라벨
+          if (obj.userData.labelSprite) {
+            obj.remove(obj.userData.labelSprite);
+            delete obj.userData.labelSprite;
+          } else {
+            const txt = `${obj.userData.azimuth}° / ${obj.userData.elevation}°`;
+            const sprite = makeTextSprite(txt);
+            sprite.position.copy(obj.position).add(new THREE.Vector3(0, 0.05, 0));
+            obj.add(sprite);
+            obj.userData.labelSprite = sprite;
+          }
+        }
       }
     }
 
-    function generateDome(){
+    function makeTextSprite(message) {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      ctx.font = '24px sans-serif';
+      const w = ctx.measureText(message).width;
+      canvas.width = w + 20;
+      canvas.height = 32;
+      ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.fillStyle = 'white'; ctx.fillText(message, 10, 24);
+      const texture = new THREE.CanvasTexture(canvas);
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture }));
+      sprite.scale.set(canvas.width/200, canvas.height/200, 1);
+      return sprite;
+    }
+
+    function generateDome(position) {
       const ts = parseFloat(document.getElementById('targetSize').value);
       const mul = parseFloat(document.getElementById('sizeMultiplier').value);
-      const azs = document.getElementById('azimuths').value.split(',').map(n=>parseFloat(n));
-      const els = document.getElementById('elevations').value.split(',').map(n=>parseFloat(n));
-      const radius = (ts/1000)*mul;
+      const azs = document.getElementById('azimuths').value.split(',').map(v=>parseFloat(v.trim())).filter(v=>!isNaN(v));
+      const els = document.getElementById('elevations').value.split(',').map(v=>parseFloat(v.trim())).filter(v=>!isNaN(v));
+      const radius = (ts/1000) * mul;
       if (domeGroup) scene.remove(domeGroup);
       domeGroup = new THREE.Group();
-
-      const mat = new THREE.MeshStandardMaterial({color:0x000000,transparent:true,opacity:0.3,side:THREE.DoubleSide});
-      domeGroup.add(new THREE.Mesh(new THREE.SphereGeometry(radius,32,16,0,Math.PI*2,0,Math.PI/2), mat));
-      domeGroup.add(new THREE.Mesh(new THREE.SphereGeometry(radius-0.01,32,16,0,Math.PI*2,0,Math.PI/2), mat));
-
-      const geo = new THREE.SphereGeometry(0.03,16,16);
-      const mat2 = new THREE.MeshBasicMaterial({color:0xff0000});
-      azs.forEach(az=> els.forEach(el=>{
+      
+      // Dome
+      const outer = new THREE.Mesh(
+        new THREE.SphereGeometry(radius, 32, 16, 0, Math.PI*2, 0, Math.PI/2),
+        new THREE.MeshStandardMaterial({ color:0x000000, transparent:true, opacity:0.3, side:THREE.DoubleSide })
+      );
+      const inner = new THREE.Mesh(
+        new THREE.SphereGeometry(radius-0.01, 32, 16, 0, Math.PI*2, 0, Math.PI/2),
+        new THREE.MeshStandardMaterial({ color:0x000000, transparent:true, opacity:0.3, side:THREE.DoubleSide })
+      );
+      domeGroup.add(outer, inner);
+      
+      // Markers
+      const geo = new THREE.SphereGeometry(0.03, 16, 16);
+      const mat = new THREE.MeshBasicMaterial({ color:0xffff00 });
+      azs.forEach(az => els.forEach(el => {
         const theta = THREE.MathUtils.degToRad(az);
         const phi = THREE.MathUtils.degToRad(el);
-        const x = radius*Math.cos(phi)*Math.sin(theta);
-        const y = radius*Math.sin(phi);
-        const z = radius*Math.cos(phi)*Math.cos(theta);
-        const m = new THREE.Mesh(geo,mat2);
-        m.position.set(x,y,z);
-        m.userData.label = `${az}° / ${el}°`;
-        domeGroup.add(m);
+        const x = radius * Math.cos(phi) * Math.sin(theta);
+        const y = radius * Math.sin(phi);
+        const z = radius * Math.cos(phi) * Math.cos(theta);
+        const marker = new THREE.Mesh(geo, mat);
+        marker.position.set(x, y, z);
+        marker.userData = { azimuth: az, elevation: el };
+        domeGroup.add(marker);
       }));
-
-      // Place 0.5m in front
-      const dir = new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion);
-      domeGroup.position.copy(camera.position).add(dir.multiplyScalar(0.5));
+      
+      domeGroup.position.copy(position);
       scene.add(domeGroup);
       new DragControls([domeGroup], camera, renderer.domElement);
     }
