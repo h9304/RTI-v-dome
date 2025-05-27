@@ -2,605 +2,882 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RTI 조명 돔 AR 인터페이스</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>WebXR RTI Dome (v5 Torch Retry)</title>
     <style>
-        body {
-            margin: 0;
-            padding: 0;
-            background: #000;
-            font-family: Arial, sans-serif;
-            overflow: hidden;
+        body { 
+            margin: 0; 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif; 
+            overflow: hidden; 
+            background-color: #000; 
+            color: #fff; 
+            overscroll-behavior: none;
         }
-        
-        #container {
-            position: relative;
-            width: 100vw;
-            height: 100vh;
-        }
-        
-        #controls {
+        #inputContainer {
             position: absolute;
-            top: 20px;
-            left: 20px;
-            background: rgba(0, 0, 0, 0.8);
-            color: white;
-            padding: 20px;
-            border-radius: 10px;
-            z-index: 100;
-            max-width: 300px;
+            top: 10px;
+            left: 10px;
+            background: rgba(20,20,20,0.85);
+            padding: 15px;
+            border-radius: 12px;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            max-width: calc(100% - 40px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.1);
         }
-        
-        .control-group {
-            margin-bottom: 15px;
-        }
-        
-        label {
+        #inputContainer label, #settingsModal label {
+            font-size: 0.9em;
+            color: #ccc;
+            margin-bottom: 3px;
             display: block;
-            margin-bottom: 5px;
-            font-size: 12px;
         }
-        
-        input, textarea {
-            width: 100%;
-            padding: 5px;
-            border: none;
-            border-radius: 3px;
-            background: rgba(255, 255, 255, 0.9);
-            font-size: 12px;
+        #inputContainer input[type="number"], 
+        #inputContainer input[type="text"],
+        #settingsModal input[type="number"], 
+        #settingsModal input[type="text"] {
+            width: calc(100% - 18px); 
+            padding: 10px; 
+            border-radius: 6px; 
+            border: 1px solid #444; 
+            background: #2a2a2a;
+            color: #fff;
+            font-size: 0.95em;
+            box-sizing: border-box;
+            margin-bottom: 8px;
         }
-        
-        textarea {
-            height: 60px;
-            resize: vertical;
+        #inputContainer input:focus, #settingsModal input:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 2px rgba(0,123,255,0.25);
         }
-        
-        button {
-            background: #4CAF50;
+        #inputContainer button, #arModeControls button, #settingsModal button {
+            padding: 12px 15px; 
+            background-color: #007bff; 
             color: white;
-            border: none;
-            padding: 10px 15px;
-            border-radius: 5px;
+            border: none; 
+            border-radius: 6px; 
             cursor: pointer;
-            margin: 5px 5px 5px 0;
-            font-size: 12px;
+            font-size: 1em;
+            transition: background-color 0.2s ease;
         }
-        
-        button:hover {
-            background: #45a049;
+        #inputContainer button:hover, #arModeControls button:hover, #settingsModal button:hover {
+            background-color: #0056b3;
         }
-        
-        button:disabled {
-            background: #666;
-            cursor: not-allowed;
+        #arButton {
+            position: absolute !important; 
+            bottom: 20px !important;
+            left: 50% !important;
+            transform: translateX(-50%) !important;
+            padding: 12px 20px !important;
+            background-color: #28a745 !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 8px !important;
+            font-size: 1.1em !important;
+            z-index: 100 !important;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3) !important;
         }
-        
-        #flash-btn {
-            background: #ff4444;
-        }
-        
-        #flash-btn:hover {
-            background: #cc3333;
-        }
-        
-        #flash-btn.on {
-            background: #ffaa00;
-        }
-        
-        #status {
+        #statusMessage {
             position: absolute;
-            bottom: 20px;
-            left: 20px;
-            background: rgba(0, 0, 0, 0.8);
-            color: white;
-            padding: 10px;
-            border-radius: 5px;
-            z-index: 100;
-            font-size: 12px;
-        }
-        
-        #info-panel {
-            position: absolute;
-            top: 50%;
+            bottom: 80px; 
             left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(0, 0, 0, 0.9);
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.75);
+            padding: 10px 15px;
+            border-radius: 8px;
             color: white;
-            padding: 20px;
-            border-radius: 10px;
-            z-index: 200;
+            z-index: 10;
             text-align: center;
-            display: none;
+            font-size: 0.9em;
+            display: none; 
+            max-width: 80%;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
         }
-        
-        .hide-controls {
-            transform: translateX(-100%);
-            transition: transform 0.3s ease;
-        }
-        
-        #toggle-controls {
+        #arModeControls {
+            display: none; /* Initially hidden */
             position: absolute;
-            top: 20px;
-            left: 350px;
-            background: rgba(0, 0, 0, 0.8);
-            color: white;
-            border: none;
-            padding: 10px;
-            border-radius: 5px;
-            cursor: pointer;
-            z-index: 101;
+            top: 10px;
+            right: 10px;
+            z-index: 20;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
         }
+        #arModeControls button {
+            background-color: #17a2b8; 
+            font-size: 0.9em;
+        }
+        #arModeControls button#resetDomePositionButton { 
+            background-color: #ffc107; 
+            color: #212529;
+        }
+        #arModeControls button#resetDomePositionButton:hover {
+             background-color: #e0a800;
+        }
+        #arModeControls button:hover {
+            background-color: #117a8b;
+        }
+        #settingsModal {
+            display: none; 
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(30,30,30,0.97);
+            padding: 25px;
+            border-radius: 15px;
+            z-index: 101; 
+            width: 90%;
+            max-width: 380px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.6);
+            border: 1px solid rgba(255,255,255,0.15);
+        }
+        #settingsModal h3 {
+            margin-top: 0;
+            margin-bottom: 20px;
+            color: #00aeff;
+            text-align: center;
+            font-size: 1.3em;
+        }
+        #settingsModal .modal-actions {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 25px;
+        }
+         #settingsModal .modal-actions button {
+            width: 45%;
+         }
+         #settingsModal #applyModalSettingsButton {
+            background-color: #28a745; 
+         }
+         #settingsModal #applyModalSettingsButton:hover {
+            background-color: #1e7e34; 
+         }
+         #settingsModal #closeModalButton {
+            background-color: #dc3545; 
+         }
+         #settingsModal #closeModalButton:hover {
+            background-color: #b02a37;
+         }
     </style>
 </head>
 <body>
-    <div id="container">
-        <div id="controls">
-            <h3 style="margin-top: 0;">RTI 조명 돔 설정</h3>
-            
-            <div class="control-group">
-                <label>대상 실제 크기 (mm):</label>
-                <input type="number" id="objectSize" value="100" min="1" max="1000">
-            </div>
-            
-            <div class="control-group">
-                <label>돔 반지름 배율 (2-4배):</label>
-                <input type="number" id="domeRadius" value="3" min="2" max="4" step="0.1">
-            </div>
-            
-            <div class="control-group">
-                <label>방위각 리스트 (°, 콤마 구분):</label>
-                <textarea id="azimuthList" placeholder="0,45,90,135,180,225,270,315">0,45,90,135,180,225,270,315</textarea>
-            </div>
-            
-            <div class="control-group">
-                <label>고도각 리스트 (°, 콤마 구분):</label>
-                <textarea id="elevationList" placeholder="15,30,45,60,75">15,30,45,60,75</textarea>
-            </div>
-            
-            <button onclick="generateDome()">돔 생성</button>
-            <button onclick="startAR()" id="ar-btn">AR 시작</button>
-            <button onclick="toggleFlash()" id="flash-btn">플래시 OFF</button>
-            <button onclick="resetView()">뷰 리셋</button>
-            <button onclick="requestPermissions()">권한 요청</button>
+    <div id="inputContainer">
+        <div>
+            <label for="targetSize">대상 실제 크기 (mm):</label>
+            <input type="number" id="targetSize" value="100">
         </div>
-        
-        <button id="toggle-controls" onclick="toggleControls()">◀</button>
-        
-        <div id="status">
-            WebXR 지원 확인 중...
+        <div>
+            <label for="radiusMultiplier">돔 반지름 배율 (대상 크기의 N배, 2-4):</label>
+            <input type="number" id="radiusMultiplier" value="3" min="2" max="4" step="0.1">
         </div>
-        
-        <div id="info-panel">
-            <h3 id="marker-info"></h3>
-            <button onclick="hideInfo()">닫기</button>
+        <div>
+            <label for="azimuths">방위각 리스트 (°): (예: 0,45,90)</label>
+            <input type="text" id="azimuths" value="0,45,90,135,180,225,270,315">
+        </div>
+        <div>
+            <label for="elevations">고도각 리스트 (°): (예: 15,30,45)</label>
+            <input type="text" id="elevations" value="15,30,45,60,75">
+        </div>
+        <button id="generateDomeButton">돔 생성/업데이트 (AR 시작 후)</button>
+    </div>
+
+    <div id="arModeControls">
+        <button id="arSettingsButton">입력값</button>
+        <button id="resetDomePositionButton">돔 위치 재설정</button>
+        <button id="torchButton">손전등 켜기</button> 
+    </div>
+
+    <div id="settingsModal">
+        <h3>AR 설정</h3>
+        <div>
+            <label for="modalTargetSize">대상 실제 크기 (mm):</label>
+            <input type="number" id="modalTargetSize">
+        </div>
+        <div>
+            <label for="modalRadiusMultiplier">돔 반지름 배율 (2-4):</label>
+            <input type="number" id="modalRadiusMultiplier" min="2" max="4" step="0.1">
+        </div>
+        <div>
+            <label for="modalAzimuths">방위각 리스트 (°):</label>
+            <input type="text" id="modalAzimuths">
+        </div>
+        <div>
+            <label for="modalElevations">고도각 리스트 (°):</label>
+            <input type="text" id="modalElevations">
+        </div>
+        <div class="modal-actions">
+            <button id="applyModalSettingsButton">적용</button>
+            <button id="closeModalButton">닫기</button>
         </div>
     </div>
 
-    <script>
-        let scene, camera, renderer, dome, markers = [], labelSprites = [];
-        let isARActive = false;
-        let flashOn = false;
-        let isDragging = false;
-        let dragStart = new THREE.Vector2();
-        let domePosition = new THREE.Vector3();
-        let controlsHidden = false;
+    <div id="statusMessage"></div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+            }
+        }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { ARButton } from 'three/addons/webxr/ARButton.js';
+
+        let camera, scene, renderer;
+        let controller;
+        let reticle; 
+        let domeGroup = null; 
+        let hitTestSource = null;
         
-        // 씬 초기화
-        function initScene() {
+        let targetSize = 100; 
+        let radiusMultiplier = 3;
+        let azimuths = [0, 45, 90, 135, 180, 225, 270, 315];
+        let elevations = [15, 30, 45, 60, 75];
+
+        const raycaster = new THREE.Raycaster();
+        const statusMessageEl = document.getElementById('statusMessage'); 
+        const inputContainer = document.getElementById('inputContainer');
+        const arModeControls = document.getElementById('arModeControls');
+        const settingsModal = document.getElementById('settingsModal');
+        const torchButton = document.getElementById('torchButton'); // Torch button reference re-added
+        const resetDomePositionButton = document.getElementById('resetDomePositionButton');
+
+        let placementRequested = false;
+        let allowReticleUpdate = true; 
+
+        let isDraggingDome = false;
+        let activePointerId = null; 
+        let currentStream = null; // For torch control
+        let isTorchOn = false;    // For torch control
+
+        function showStatus(message, duration = 3000) {
+            if (statusMessageEl) { 
+                statusMessageEl.textContent = message;
+                statusMessageEl.style.display = 'block';
+                if (statusMessageEl.timeoutId) clearTimeout(statusMessageEl.timeoutId);
+                if (duration > 0) {
+                    statusMessageEl.timeoutId = setTimeout(() => {
+                        statusMessageEl.style.display = 'none';
+                    }, duration);
+                }
+            } else {
+                console.warn("statusMessage element not found. Message:", message);
+            }
+        }
+
+        init();
+        animate();
+
+        function init() {
             scene = new THREE.Scene();
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            
+            scene.add(new THREE.AmbientLight(0x888888,1.2));
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 2.8);
+            directionalLight.position.set(0.5, 1, 0.75).normalize();
+            scene.add(directionalLight);
+
+            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 40);
+
+            reticle = new THREE.Mesh(
+                new THREE.RingGeometry(0.03, 0.04, 32), 
+                new THREE.MeshBasicMaterial({ color: 0xffffff, opacity: 0.9, transparent: true, depthTest: false, side: THREE.DoubleSide })
+            );
+            reticle.matrixAutoUpdate = false;
+            reticle.visible = false;
+            scene.add(reticle);
+
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.xr.enabled = true;
-            renderer.setClearColor(0x000000, 0);
-            
-            document.getElementById('container').appendChild(renderer.domElement);
-            
-            // 조명 설정
-            const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
-            scene.add(ambientLight);
-            
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-            directionalLight.position.set(1, 1, 1);
-            scene.add(directionalLight);
-            
-            // 카메라 초기 위치
-            camera.position.set(0, 1.6, 3);
-            camera.lookAt(0, 0, 0);
-            
-            // 바닥 격자 추가
-            const gridHelper = new THREE.GridHelper(10, 20, 0x444444, 0x444444);
-            scene.add(gridHelper);
-            
-            // 마우스/터치 이벤트
-            setupInteraction();
-            
-            animate();
-        }
-        
-        // 돔 생성 함수
-        function generateDome() {
-            clearDome();
-            
-            const objectSize = parseFloat(document.getElementById('objectSize').value);
-            const radiusMultiplier = parseFloat(document.getElementById('domeRadius').value);
-            const azimuthStr = document.getElementById('azimuthList').value;
-            const elevationStr = document.getElementById('elevationList').value;
-            
-            if (!objectSize || !radiusMultiplier || !azimuthStr || !elevationStr) {
-                alert('모든 필드를 입력해주세요.');
-                return;
-            }
-            
-            const azimuths = azimuthStr.split(',').map(a => parseFloat(a.trim())).filter(a => !isNaN(a));
-            const elevations = elevationStr.split(',').map(e => parseFloat(e.trim())).filter(e => !isNaN(e));
-            
-            if (azimuths.length === 0 || elevations.length === 0) {
-                alert('유효한 각도 값을 입력해주세요.');
-                return;
-            }
-            
-            // 돔 반지름 계산 (mm를 m로 변환)
-            const domeRadius = (objectSize * radiusMultiplier) / 1000;
-            
-            // 반구 돔 생성
-            const domeGeometry = new THREE.SphereGeometry(domeRadius, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2);
-            const domeMaterial = new THREE.MeshLambertMaterial({
-                color: 0x000000,
-                transparent: true,
-                opacity: 0.3,
-                side: THREE.DoubleSide
+            document.body.appendChild(renderer.domElement);
+
+            const arButtonElement = ARButton.createButton(renderer, {
+                requiredFeatures: ['hit-test', 'dom-overlay'], 
+                optionalFeatures: ['anchors', 'plane-detection'], 
+                domOverlay: { root: document.body } 
             });
+            document.body.appendChild(arButtonElement);
+            arButtonElement.id = 'arButton';
+            arButtonElement.style.display = 'block';
+
+            controller = renderer.xr.getController(0);
+            controller.addEventListener('selectstart', onSelectStart);
+            scene.add(controller);
+
+            document.getElementById('targetSize').addEventListener('input', (e) => targetSize = parseFloat(e.target.value) || 100);
+            document.getElementById('radiusMultiplier').addEventListener('input', (e) => radiusMultiplier = parseFloat(e.target.value) || 3);
+            document.getElementById('azimuths').addEventListener('input', (e) => azimuths = e.target.value.split(',').map(Number).filter(n => !isNaN(n)));
+            document.getElementById('elevations').addEventListener('input', (e) => elevations = e.target.value.split(',').map(Number).filter(n => !isNaN(n)));
             
-            dome = new THREE.Mesh(domeGeometry, domeMaterial);
-            dome.position.copy(domePosition);
-            scene.add(dome);
-            
-            // 조명 마커 생성
-            azimuths.forEach(azimuth => {
-                elevations.forEach(elevation => {
-                    createLightMarker(azimuth, elevation, domeRadius);
-                });
-            });
-            
-            updateStatus(`돔 생성 완료: ${markers.length}개 마커, 반지름 ${(domeRadius * 1000).toFixed(1)}mm`);
-        }
-        
-        // 조명 마커 생성
-        function createLightMarker(azimuth, elevation, domeRadius) {
-            const azimuthRad = (azimuth * Math.PI) / 180;
-            const elevationRad = (elevation * Math.PI) / 180;
-            
-            // 구면 좌표를 직교 좌표로 변환
-            const x = domeRadius * Math.cos(elevationRad) * Math.cos(azimuthRad);
-            const z = domeRadius * Math.cos(elevationRad) * Math.sin(azimuthRad);
-            const y = domeRadius * Math.sin(elevationRad);
-            
-            // 마커 구체 생성 (노란색으로 변경)
-            const markerGeometry = new THREE.SphereGeometry(0.02, 12, 12);
-            const markerMaterial = new THREE.MeshBasicMaterial({
-                color: 0xffff00,
-                emissive: 0x444400
-            });
-            
-            const marker = new THREE.Mesh(markerGeometry, markerMaterial);
-            marker.position.set(x, y, z);
-            marker.position.add(domePosition);
-            marker.userData = { azimuth, elevation };
-            
-            scene.add(marker);
-            markers.push(marker);
-        }
-        
-        // 상호작용 설정
-        function setupInteraction() {
-            const raycaster = new THREE.Raycaster();
-            const mouse = new THREE.Vector2();
-            
-            function onPointerDown(event) {
-                if (isARActive) return;
-                
-                const rect = renderer.domElement.getBoundingClientRect();
-                mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-                mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-                
-                raycaster.setFromCamera(mouse, camera);
-                
-                // 마커 클릭 확인
-                const markerIntersects = raycaster.intersectObjects(markers);
-                if (markerIntersects.length > 0) {
-                    const marker = markerIntersects[0].object;
-                    showMarkerInfo(marker.userData.azimuth, marker.userData.elevation);
+            document.getElementById('generateDomeButton').addEventListener('click', () => {
+                if (!renderer.xr.isPresenting) {
+                    showStatus("AR 세션을 먼저 시작해주세요.", 3000);
                     return;
                 }
+                if (domeGroup) { 
+                    updateAndPlaceDome();
+                } else { 
+                    allowReticleUpdate = true;
+                    showStatus("돔을 배치할 위치를 탭하세요.", 3000);
+                }
+            });
+            
+            resetDomePositionButton.addEventListener('click', () => {
+                if (renderer.xr.isPresenting) {
+                    allowReticleUpdate = true; 
+                    reticle.visible = true; 
+                    placementRequested = false; 
+                    showStatus("돔을 새로 배치할 위치를 탭하세요.", 3000);
+                }
+            });
+
+            document.getElementById('arSettingsButton').addEventListener('click', openSettingsModal);
+            torchButton.addEventListener('click', toggleTorch); // Torch button listener re-added
+            document.getElementById('applyModalSettingsButton').addEventListener('click', applySettingsFromModal);
+            document.getElementById('closeModalButton').addEventListener('click', closeSettingsModal);
+            
+            targetSize = parseFloat(document.getElementById('targetSize').value);
+            radiusMultiplier = parseFloat(document.getElementById('radiusMultiplier').value);
+            azimuths = document.getElementById('azimuths').value.split(',').map(Number).filter(n => !isNaN(n));
+            elevations = document.getElementById('elevations').value.split(',').map(Number).filter(n => !isNaN(n));
+
+            renderer.domElement.addEventListener('pointerdown', onPointerDown, false);
+            renderer.domElement.addEventListener('pointermove', onPointerMove, false);
+            renderer.domElement.addEventListener('pointerup', onPointerUp, false);
+            renderer.domElement.addEventListener('pointercancel', onPointerUp, false);
+            
+            window.addEventListener('resize', onWindowResize);
+
+            renderer.xr.addEventListener('sessionstart', async () => {
+                const session = renderer.xr.getSession();
+                showStatus("AR 세션 시작됨. 표면을 찾아 레티클을 조준하고 탭하여 돔 배치.", 0); 
+                inputContainer.style.display = 'none';
+                arModeControls.style.display = 'flex';
+                allowReticleUpdate = true; 
+
+                try {
+                    const viewerReferenceSpace = await session.requestReferenceSpace('viewer');
+                    hitTestSource = await session.requestHitTestSource({ 
+                        space: viewerReferenceSpace,
+                        entityTypes: ['plane'] 
+                    });
+                    if (!hitTestSource) {
+                        console.warn("Hit-test with entityTypes: ['plane'] failed. Falling back to general hit-test.");
+                        showStatus("표면 감지(plane) 실패, 일반 모드로 시도.", 2000);
+                        hitTestSource = await session.requestHitTestSource({ space: viewerReferenceSpace }); 
+                         if (!hitTestSource) {
+                            showStatus("표면 감지 기능을 시작할 수 없습니다.", 4000);
+                            console.error("Fallback Hit-test source also failed.");
+                         } else {
+                            console.log("Fallback Hit-test source acquired.");
+                         }
+                    } else {
+                        console.log("Hit-test source with entityTypes: ['plane'] acquired.");
+                    }
+                } catch (error) {
+                    console.error("Initial Hit-test source 요청 실패 (plane entityTypes):", error);
+                    try { 
+                        const viewerReferenceSpace = await session.requestReferenceSpace('viewer');
+                        hitTestSource = await session.requestHitTestSource({ space: viewerReferenceSpace });
+                        if (!hitTestSource) {
+                             showStatus("표면 감지 기능(Hit-test)을 시작할 수 없습니다. (fallback after error)", 4000);
+                             console.error("Fallback Hit-test source also failed after initial error.");
+                        } else {
+                            showStatus("표면 감지: 일반 모드로 전환됨 (오류 후).", 2000);
+                            console.log("Fallback Hit-test source acquired after initial error.");
+                        }
+                    } catch (fallbackError) {
+                        console.error("Fallback Hit-test source 요청 실패 (after initial error):", fallbackError);
+                        showStatus("Hit-test를 시작할 수 없습니다. AR 기능이 제한될 수 있습니다.", 4000);
+                    }
+                }
+            });
+
+            renderer.xr.addEventListener('sessionend', () => {
+                hitTestSource = null;
+                reticle.visible = false;
+                allowReticleUpdate = true; 
+                clearDomeAndChildren();
+                showStatus("AR 세션 종료됨.", 3000);
+                inputContainer.style.display = 'flex';
+                arModeControls.style.display = 'none';
+                closeSettingsModal();
                 
-                // 돔 드래그 시작
-                if (dome) {
-                    const domeIntersects = raycaster.intersectObject(dome);
-                    if (domeIntersects.length > 0) {
-                        isDragging = true;
-                        dragStart.set(mouse.x, mouse.y);
+                // Torch cleanup on session end
+                if (isTorchOn) { 
+                    controlTorch(false); 
+                } else if (currentStream) { 
+                    currentStream.getTracks().forEach(track => {
+                        if (track.readyState === 'live') track.stop();
+                    });
+                    currentStream = null;
+                }
+                isTorchOn = false; 
+                torchButton.textContent = "손전등 켜기";
+            });
+            showStatus("AR 세션을 시작하고, 바닥이나 벽을 탭하여 돔을 배치하세요.", 5000); 
+        }
+        
+        function updateAndPlaceDome(hitMatrix = null, frameForAnchor = null) {
+            if (domeGroup && !hitMatrix) { 
+                const oldAnchor = domeGroup.userData.anchor;
+                const oldPosition = domeGroup.position.clone();
+                const oldQuaternion = domeGroup.quaternion.clone();
+                clearDomeAndChildren();
+                domeGroup = createDome();
+                if (oldAnchor) {
+                    domeGroup.userData.anchor = oldAnchor; 
+                } else {
+                    domeGroup.position.copy(oldPosition);
+                    domeGroup.quaternion.copy(oldQuaternion);
+                }
+                scene.add(domeGroup);
+                showStatus("돔 설정 업데이트 완료.", 2000);
+                allowReticleUpdate = false; 
+                reticle.visible = false;
+            } else if (hitMatrix) { 
+                clearDomeAndChildren();
+                domeGroup = createDome();
+                
+                const referenceSpace = renderer.xr.getReferenceSpace();
+                if (frameForAnchor && referenceSpace && hitMatrix.userData?.hitTestResult) {
+                    const hit = hitMatrix.userData.hitTestResult;
+                    hit.createAnchor().then(anchor => {
+                        domeGroup.userData.anchor = anchor;
+                        scene.add(domeGroup);
+                        showStatus("돔 배치 완료 (앵커 사용).", 3000);
+                    }).catch(err => {
+                        console.warn("앵커 생성 실패:", err);
+                        domeGroup.position.setFromMatrixPosition(hitMatrix);
+                        domeGroup.quaternion.setFromRotationMatrix(hitMatrix);
+                        scene.add(domeGroup);
+                        showStatus("돔 배치 완료 (앵커 실패, 직접 배치).", 3000);
+                    });
+                } else { 
+                    domeGroup.position.setFromMatrixPosition(hitMatrix);
+                    domeGroup.quaternion.setFromRotationMatrix(hitMatrix);
+                    scene.add(domeGroup);
+                    showStatus("돔 배치 완료 (앵커 정보 없음).", 3000);
+                }
+                allowReticleUpdate = false; 
+                reticle.visible = false;
+            } else if (!domeGroup) { 
+                showStatus("돔을 배치할 위치를 탭하세요.", 3000);
+                allowReticleUpdate = true; 
+            }
+        }
+        
+        function clearDomeAndChildren() {
+            if (!domeGroup) return;
+            domeGroup.traverse(child => {
+                if (child.isMesh) {
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) {
+                        if (Array.isArray(child.material)) {
+                            child.material.forEach(m => { if (m.map) m.map.dispose(); m.dispose(); });
+                        } else {
+                            if (child.material.map) child.material.map.dispose(); child.material.dispose();
+                        }
+                    }
+                }
+                if (child.isSprite && child.material) {
+                     if (child.material.map) child.material.map.dispose(); child.material.dispose();
+                }
+            });
+            scene.remove(domeGroup);
+            domeGroup = null;
+        }
+
+        function createDome() {
+            const newDomeGroup = new THREE.Group();
+            const actualRadius = Math.max(0.01, (targetSize * radiusMultiplier) / 1000); 
+
+            const domeGeometry = new THREE.SphereGeometry(actualRadius, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2);
+            const domeMaterial = new THREE.MeshStandardMaterial({
+                color: 0x101010, transparent: true, opacity: 0.65, side: THREE.DoubleSide,
+                metalness: 0.1, roughness: 0.9,
+            });
+            const hemisphere = new THREE.Mesh(domeGeometry, domeMaterial);
+            hemisphere.userData.isDomePart = true; 
+            newDomeGroup.add(hemisphere);
+
+            const targetMarkerRadius = actualRadius * 0.05;
+            const targetMarkerGeometry = new THREE.CircleGeometry(targetMarkerRadius, 32);
+            const targetMarkerMaterial = new THREE.MeshBasicMaterial({ color: 0x888888, side: THREE.DoubleSide, transparent: true, opacity: 0.7 });
+            const targetMarker = new THREE.Mesh(targetMarkerGeometry, targetMarkerMaterial);
+            targetMarker.rotation.x = -Math.PI / 2; 
+            targetMarker.position.y = 0.001; 
+            newDomeGroup.add(targetMarker);
+
+            const markerRadius = Math.max(0.003, actualRadius * 0.025); 
+            const markerGeometry = new THREE.SphereGeometry(markerRadius, 12, 6);
+            const markerMaterial = new THREE.MeshStandardMaterial({ color: 0xFFD700, metalness: 0.3, roughness: 0.4 });
+            
+            let markerCount = 0;
+            (elevations || []).forEach(el => {
+                (azimuths || []).forEach(az => {
+                    if (isNaN(el) || isNaN(az)) return;
+                    markerCount++;
+                    const elRad = THREE.MathUtils.degToRad(el);
+                    const azRad = THREE.MathUtils.degToRad(az);
+                    const x = actualRadius * Math.cos(elRad) * Math.cos(azRad);
+                    const y = actualRadius * Math.sin(elRad); 
+                    const z = actualRadius * Math.cos(elRad) * Math.sin(azRad);
+
+                    const marker = new THREE.Mesh(markerGeometry, markerMaterial.clone());
+                    marker.position.set(x, y, z);
+                    
+                    const numberLabelText = `${markerCount}`;
+                    const numberLabelMesh = createTextSprite(numberLabelText, {
+                        fontsize: 28, 
+                        fontface: "Arial",
+                        textColor: { r: 255, g: 230, b: 100, a: 1.0 }, 
+                        backgroundColor: { r: 0, g: 0, b: 0, a: 0.0 } 
+                    });
+                    const numberLabelScaleFactor = actualRadius * 0.03;
+                    numberLabelMesh.scale.set(numberLabelScaleFactor, numberLabelScaleFactor * 0.7, numberLabelScaleFactor);
+                    
+                    const offsetDirectionForNumber = marker.position.clone().normalize();
+                    const numberLabelOffset = markerRadius * 2.2; 
+                    numberLabelMesh.position.copy(marker.position).add(offsetDirectionForNumber.multiplyScalar(numberLabelOffset));
+                    newDomeGroup.add(numberLabelMesh);
+
+                    marker.userData = { 
+                        isLightMarker: true, 
+                        azimuth: az, 
+                        elevation: el, 
+                        number: markerCount,
+                        numberLabelMesh: numberLabelMesh, 
+                        azElLabelMesh: null, 
+                        isAzElLabelVisible: false,
+                    };
+                    newDomeGroup.add(marker);
+                });
+            });
+            newDomeGroup.userData.isDomeRoot = true;
+            newDomeGroup.userData.anchor = null; 
+            return newDomeGroup;
+        }
+
+        function onSelectStart(event) {
+            if (domeGroup) {
+                const controller = event.target; 
+                const tempMatrix = new THREE.Matrix4();
+                tempMatrix.identity().extractRotation(controller.matrixWorld); 
+                raycaster.ray.origin.setFromMatrixPosition(controller.matrixWorld); 
+                raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix); 
+
+                const intersects = raycaster.intersectObject(domeGroup, true);
+                if (intersects.length > 0) {
+                    const firstIntersected = intersects[0].object;
+                    if (firstIntersected.userData.isLightMarker) {
+                        toggleMarkerAzElLabel(firstIntersected);
+                        return; 
                     }
                 }
             }
-            
-            function onPointerMove(event) {
-                if (!isDragging || isARActive) return;
-                
-                const rect = renderer.domElement.getBoundingClientRect();
-                mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-                mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-                
-                const deltaX = (mouse.x - dragStart.x) * 2;
-                const deltaY = (mouse.y - dragStart.y) * 2;
-                
-                // 돔과 마커 이동
-                const moveVector = new THREE.Vector3(deltaX, 0, deltaY);
-                domePosition.add(moveVector);
-                
-                if (dome) {
-                    dome.position.copy(domePosition);
-                }
-                
-                markers.forEach(marker => {
-                    marker.position.add(moveVector);
-                });
-                
-                dragStart.set(mouse.x, mouse.y);
-            }
-            
-            function onPointerUp() {
-                isDragging = false;
-            }
-            
-            renderer.domElement.addEventListener('pointerdown', onPointerDown);
-            renderer.domElement.addEventListener('pointermove', onPointerMove);
-            renderer.domElement.addEventListener('pointerup', onPointerUp);
-            
-            // 터치 이벤트
-            renderer.domElement.addEventListener('touchstart', (e) => {
-                e.preventDefault();
-                onPointerDown(e.touches[0]);
-            });
-            
-            renderer.domElement.addEventListener('touchmove', (e) => {
-                e.preventDefault();
-                onPointerMove(e.touches[0]);
-            });
-            
-            renderer.domElement.addEventListener('touchend', (e) => {
-                e.preventDefault();
-                onPointerUp();
-            });
-        }
-        
-        // 마커 정보 표시
-        function showMarkerInfo(azimuth, elevation) {
-            document.getElementById('marker-info').textContent = `방위각: ${azimuth}°, 고도각: ${elevation}°`;
-            document.getElementById('info-panel').style.display = 'block';
-        }
-        
-        function hideInfo() {
-            document.getElementById('info-panel').style.display = 'none';
-        }
-        
-        // AR 시작
-        async function startAR() {
-            if (!navigator.xr) {
-                updateStatus('WebXR을 지원하지 않는 브라우저입니다.');
-                return;
-            }
-            
-            try {
-                // 더 포괄적인 AR 세션 요청
-                const sessionInit = {
-                    requiredFeatures: ['local'],
-                    optionalFeatures: ['dom-overlay', 'hit-test', 'anchors']
-                };
-                
-                const session = await navigator.xr.requestSession('immersive-ar', sessionInit);
-                
-                // AR 세션 설정
-                await renderer.xr.setSession(session);
-                isARActive = true;
-                
-                // 세션 이벤트 리스너
-                session.addEventListener('end', () => {
-                    isARActive = false;
-                    document.getElementById('ar-btn').textContent = 'AR 시작';
-                    document.getElementById('ar-btn').onclick = startAR;
-                    updateStatus('AR 세션 종료됨');
-                });
-                
-                // 레퍼런스 스페이스 설정
-                const referenceSpace = await session.requestReferenceSpace('local');
-                
-                document.getElementById('ar-btn').textContent = 'AR 종료';
-                document.getElementById('ar-btn').onclick = stopAR;
-                
-                updateStatus('AR 모드 활성화 - 카메라 화면이 표시됩니다');
-                
-                // 컨트롤 패널 숨기기 (AR 모드에서)
-                if (!controlsHidden) {
-                    toggleControls();
-                }
-                
-            } catch (error) {
-                console.error('AR 시작 오류:', error);
-                updateStatus('AR 세션 시작 실패: ' + error.message);
-                
-                // WebXR Device API 지원 확인
-                if (error.name === 'NotSupportedError') {
-                    updateStatus('이 디바이스는 WebXR AR을 지원하지 않습니다.');
-                } else if (error.name === 'NotAllowedError') {
-                    updateStatus('AR 권한이 거부되었습니다. 브라우저 설정을 확인해주세요.');
-                }
-            }
-        }
-        
-        function stopAR() {
-            if (renderer.xr.getSession()) {
-                renderer.xr.getSession().end();
-            }
-            isARActive = false;
-            document.getElementById('ar-btn').textContent = 'AR 시작';
-            document.getElementById('ar-btn').onclick = startAR;
-            updateStatus('AR 모드 종료');
-        }
-        
-        // 권한 요청 함수 추가
-        async function requestPermissions() {
-            try {
-                if ('permissions' in navigator) {
-                    const cameraPermission = await navigator.permissions.query({name: 'camera'});
-                    updateStatus(`카메라 권한: ${cameraPermission.state}`);
-                }
-                
-                // 미디어 권한 요청 (카메라 액세스를 위해)
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: 'environment' }
-                });
-                
-                // 스트림 즉시 중지 (권한 확인용)
-                stream.getTracks().forEach(track => track.stop());
-                
-                updateStatus('카메라 권한 허용됨 - AR을 시도해보세요');
-                
-            } catch (error) {
-                updateStatus('권한 요청 실패: ' + error.message);
-            }
-        }
-        
-        // 플래시 토글
-        function toggleFlash() {
-            flashOn = !flashOn;
-            const btn = document.getElementById('flash-btn');
-            
-            if (flashOn) {
-                btn.textContent = '플래시 ON';
-                btn.classList.add('on');
-                // 플래시 ON일 때 더 밝은 노란색
-                markers.forEach(marker => {
-                    marker.material.color.setHex(0xffff88);
-                    marker.material.emissive.setHex(0x666600);
-                });
+
+            if (reticle.visible && allowReticleUpdate) { 
+                placementRequested = true;
+            } else if (!allowReticleUpdate && domeGroup) {
+                showStatus("돔 위치를 변경하려면 '돔 위치 재설정' 버튼을 누르세요.", 2500);
             } else {
-                btn.textContent = '플래시 OFF';
-                btn.classList.remove('on');
-                // 플래시 OFF일 때 기본 노란색
-                markers.forEach(marker => {
-                    marker.material.color.setHex(0xffff00);
-                    marker.material.emissive.setHex(0x444400);
-                });
+                 showStatus("레티클이 표면을 찾지 못했습니다. 다른 곳을 조준하세요.", 2500);
             }
-            
-            updateStatus(`플래시 ${flashOn ? 'ON' : 'OFF'}`);
         }
         
-        // 뷰 리셋
-        function resetView() {
-            camera.position.set(0, 1.6, 3);
-            camera.lookAt(0, 0, 0);
-            domePosition.set(0, 0, 0);
-            
-            if (dome) {
-                dome.position.copy(domePosition);
-            }
-            
-            // 마커 위치도 리셋
-            if (markers.length > 0) {
-                generateDome();
-            }
-            
-            updateStatus('뷰 리셋 완료');
-        }
-        
-        // 컨트롤 토글
-        function toggleControls() {
-            const controls = document.getElementById('controls');
-            const toggleBtn = document.getElementById('toggle-controls');
-            
-            controlsHidden = !controlsHidden;
-            
-            if (controlsHidden) {
-                controls.classList.add('hide-controls');
-                toggleBtn.textContent = '▶';
-                toggleBtn.style.left = '20px';
+        function toggleMarkerAzElLabel(marker) {
+            marker.userData.isAzElLabelVisible = !marker.userData.isAzElLabelVisible;
+
+            if (marker.userData.isAzElLabelVisible) {
+                if (!marker.userData.azElLabelMesh) {
+                    const labelText = `${marker.userData.azimuth}°, ${marker.userData.elevation}°`; 
+                    marker.userData.azElLabelMesh = createTextSprite(labelText, { 
+                        fontsize: 26, 
+                        fontface: "Arial", 
+                        textColor: { r:200, g:255, b:200, a:1.0 }, 
+                        backgroundColor: { r:50, g:50, b:50, a:0.7 }
+                    });
+                    
+                    const domeRadius = domeGroup.children.find(c => c.userData.isDomePart)?.geometry.parameters.radius || 1;
+                    const labelScaleFactor = domeRadius * 0.05; 
+                    marker.userData.azElLabelMesh.scale.set(labelScaleFactor * 3, labelScaleFactor * 0.8, labelScaleFactor); 
+
+                    if (marker.userData.numberLabelMesh) {
+                        const numberLabelPos = marker.userData.numberLabelMesh.position;
+                        marker.userData.azElLabelMesh.position.copy(numberLabelPos).add(new THREE.Vector3(0, -labelScaleFactor * 0.9, 0.001)); 
+                    } else { 
+                        const offsetDirection = marker.position.clone().normalize();
+                        const azElLabelPosition = marker.position.clone().add(offsetDirection.multiplyScalar(0.03));
+                        marker.userData.azElLabelMesh.position.copy(azElLabelPosition);
+                    }
+                    domeGroup.add(marker.userData.azElLabelMesh); 
+                }
+                marker.userData.azElLabelMesh.visible = true;
             } else {
-                controls.classList.remove('hide-controls');
-                toggleBtn.textContent = '◀';
-                toggleBtn.style.left = '350px';
+                if (marker.userData.azElLabelMesh) {
+                    marker.userData.azElLabelMesh.visible = false;
+                }
+            }
+        }
+
+        function createTextSprite(message, parameters = {}) {
+            const fontface = parameters.fontface || 'Arial';
+            const fontsize = parameters.fontsize || 20;
+            const borderThickness = parameters.borderThickness || 0;
+            const borderColor = parameters.borderColor || { r:0, g:0, b:0, a:0.0 };
+            const backgroundColor = parameters.backgroundColor || { r:0, g:0, b:0, a:0.5 };
+            const textColor = parameters.textColor || { r:255, g:255, b:255, a:1.0 };
+            const padding = parameters.padding || 8; 
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            context.font = `Bold ${fontsize}px ${fontface}`;
+            const metrics = context.measureText(message);
+            const textWidth = metrics.width;
+            canvas.width = textWidth + padding * 2 + borderThickness * 2;
+            canvas.height = fontsize * 1.4 + padding * 2 + borderThickness * 2; 
+            context.font = `Bold ${fontsize}px ${fontface}`; 
+            context.fillStyle = `rgba(${backgroundColor.r},${backgroundColor.g},${backgroundColor.b},${backgroundColor.a})`;
+            context.strokeStyle = `rgba(${borderColor.r},${borderColor.g},${borderColor.b},${borderColor.a})`;
+            context.lineWidth = borderThickness;
+            const radius = 6; 
+            context.beginPath();
+            context.moveTo(radius + borderThickness, borderThickness);
+            context.lineTo(canvas.width - radius - borderThickness, borderThickness);
+            context.quadraticCurveTo(canvas.width - borderThickness, borderThickness, canvas.width - borderThickness, radius + borderThickness);
+            context.lineTo(canvas.width - borderThickness, canvas.height - radius - borderThickness);
+            context.quadraticCurveTo(canvas.width - borderThickness, canvas.height - borderThickness, canvas.width - radius - borderThickness, canvas.height - borderThickness);
+            context.lineTo(radius + borderThickness, canvas.height - borderThickness);
+            context.quadraticCurveTo(borderThickness, canvas.height - borderThickness, borderThickness, canvas.height - radius - borderThickness);
+            context.lineTo(borderThickness, radius + borderThickness);
+            context.quadraticCurveTo(borderThickness, borderThickness, radius + borderThickness, borderThickness);
+            context.closePath();
+            context.fill();
+            if (borderThickness > 0) context.stroke();
+            context.fillStyle = `rgba(${textColor.r},${textColor.g},${textColor.b},${textColor.a})`;
+            context.textAlign = 'center';
+            context.textBaseline = 'middle';
+            context.fillText(message, canvas.width / 2, canvas.height / 2);
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.needsUpdate = true;
+            const spriteMaterial = new THREE.SpriteMaterial({ map: texture, depthTest: false, transparent: backgroundColor.a < 1.0 || textColor.a < 1.0 });
+            const sprite = new THREE.Sprite(spriteMaterial);
+            sprite.scale.set(canvas.width / (fontsize * 5) , canvas.height / (fontsize * 5), 1.0); 
+            return sprite;
+        }
+
+        function onPointerDown(event) {
+            if (!renderer.xr.isPresenting || !domeGroup ) return;
+            if (event.pointerType === 'mouse' && event.button !== 0) return;
+
+            const clickX = (event.clientX / window.innerWidth) * 2 - 1;
+            const clickY = -(event.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera({x: clickX, y: clickY}, camera);
+
+            const intersects = raycaster.intersectObject(domeGroup, true);
+            if (intersects.length > 0) {
+                const firstIntersected = intersects[0].object;
+                if (firstIntersected.userData.isDomePart || domeGroup.children.includes(firstIntersected)) { 
+                    isDraggingDome = true;
+                    activePointerId = event.pointerId;
+                    renderer.domElement.setPointerCapture(event.pointerId);
+                    showStatus("돔 이동 중... 기기 중앙을 원하는 위치로 조준하며 드래그.", 0);
+                    allowReticleUpdate = true; 
+                }
+            }
+        }
+        function onPointerMove(event) { if (!isDraggingDome || event.pointerId !== activePointerId) return; }
+        function onPointerUp(event) {
+            if (event.pointerId !== activePointerId) return;
+            if (isDraggingDome) {
+                isDraggingDome = false;
+                activePointerId = null;
+                renderer.domElement.releasePointerCapture(event.pointerId);
+                showStatus("돔 이동 완료.", 2000);
+                if (domeGroup && domeGroup.userData.anchor) {
+                }
+                allowReticleUpdate = false; 
+                reticle.visible = false;
             }
         }
         
-        // 돔과 마커 제거
-        function clearDome() {
-            if (dome) {
-                scene.remove(dome);
-                dome = null;
+        function openSettingsModal(){document.getElementById('modalTargetSize').value=targetSize;document.getElementById('modalRadiusMultiplier').value=radiusMultiplier;document.getElementById('modalAzimuths').value=azimuths.join(',');document.getElementById('modalElevations').value=elevations.join(',');settingsModal.style.display='block';}
+        function closeSettingsModal(){settingsModal.style.display='none';}
+        function applySettingsFromModal(){targetSize=parseFloat(document.getElementById('modalTargetSize').value)||100;radiusMultiplier=parseFloat(document.getElementById('modalRadiusMultiplier').value)||3;azimuths=document.getElementById('modalAzimuths').value.split(',').map(Number).filter(n=>!isNaN(n));elevations=document.getElementById('modalElevations').value.split(',').map(Number).filter(n=>!isNaN(n));document.getElementById('targetSize').value=targetSize;document.getElementById('radiusMultiplier').value=radiusMultiplier;document.getElementById('azimuths').value=azimuths.join(',');document.getElementById('elevations').value=elevations.join(',');closeSettingsModal();showStatus("설정 적용됨.",2500);if(renderer.xr.isPresenting&&domeGroup){updateAndPlaceDome();}}
+        
+        // Torch control functions re-added with detailed logging
+        async function controlTorch(enable) {
+            console.log(`controlTorch 호출됨 - enable: ${enable}, 현재 스트림: ${currentStream ? '있음' : '없음'}, 현재 손전등 상태: ${isTorchOn}`);
+
+            if (enable && !currentStream) { 
+                 try {
+                    console.log("손전등을 켜기 위해 카메라 스트림을 요청합니다...");
+                    currentStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+                    console.log("카메라 스트림 확보 성공.");
+                 } catch(err) {
+                    console.error("getUserMedia 실패 (손전등용):", err.name, err.message);
+                    showStatus("손전등 제어 불가: 카메라 접근 실패 - " + err.name, 3000);
+                    currentStream = null; 
+                    return false; 
+                 }
+            } else if (!currentStream && !enable) { 
+                console.log("손전등 제어: 끄기 요청, 하지만 스트림 없음 (이미 꺼져있거나 확보 안됨).");
+                isTorchOn = false;
+                torchButton.textContent = "손전등 켜기";
+                return true; 
+            } else if (!currentStream && enable) { 
+                console.warn("손전등 제어: 켜기 요청, 하지만 스트림이 예기치 않게 null입니다.");
+                showStatus("손전등 오류: 카메라 스트림 없음", 2500);
+                return false;
             }
-            
-            markers.forEach(marker => scene.remove(marker));
-            markers = [];
-            
-            labelSprites.forEach(sprite => scene.remove(sprite));
-            labelSprites = [];
+
+            if (!currentStream) { 
+                console.error("손전등 제어: 치명적 오류 - currentStream이 null입니다.");
+                showStatus("손전등 시스템 오류", 2500);
+                return false;
+            }
+
+            const videoTracks = currentStream.getVideoTracks();
+            if (!videoTracks || videoTracks.length === 0) {
+                showStatus("손전등 제어 불가: 비디오 트랙 없음", 2500);
+                console.warn("손전등 제어: 스트림에서 비디오 트랙을 찾을 수 없습니다.");
+                 if (!enable) { 
+                    currentStream.getTracks().forEach(track => { if (track.readyState === 'live') track.stop(); });
+                    currentStream = null;
+                    console.log("비디오 트랙이 없어 손전등을 끄면서 스트림을 정리했습니다.");
+                    isTorchOn = false;
+                    torchButton.textContent = "손전등 켜기";
+                }
+                return false;
+            }
+            const videoTrack = videoTracks[0];
+
+            const capabilities = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
+            console.log("비디오 트랙 기능:", JSON.stringify(capabilities));
+
+            if (!capabilities.torch) {
+                showStatus("이 기기/브라우저에서는 손전등 기능을 지원하지 않습니다.", 3000);
+                console.warn("손전등 제어: 비디오 트랙에서 torch 기능을 지원하지 않습니다.");
+                currentStream.getTracks().forEach(track => { if (track.readyState === 'live') track.stop(); });
+                currentStream = null;
+                console.log("torch 기능 미지원으로 스트림을 정리했습니다.");
+                isTorchOn = false; 
+                torchButton.textContent = "손전등 켜기";
+                return false;
+            }
+
+            try {
+                console.log(`torch 제약 조건 적용 시도: ${enable}`);
+                await videoTrack.applyConstraints({
+                    advanced: [{ torch: enable }]
+                });
+                isTorchOn = enable;
+                torchButton.textContent = enable ? "손전등 끄기" : "손전등 켜기";
+                showStatus(enable ? "손전등 켜짐" : "손전등 꺼짐", 1500);
+                console.log(`torch 제약 조건 적용 성공. isTorchOn: ${isTorchOn}`);
+
+                if (!enable) { 
+                    console.log("손전등을 끈 후 카메라 스트림을 해제합니다.");
+                    currentStream.getTracks().forEach(track => {
+                        if (track.readyState === 'live') track.stop();
+                    });
+                    currentStream = null;
+                }
+                return true;
+            } catch (err) {
+                console.error("applyConstraints 실패 (손전등용):", err.name, err.message);
+                showStatus("손전등 제어 중 오류 발생: " + err.name, 3000);
+                if (currentStream) {
+                    currentStream.getTracks().forEach(track => { if (track.readyState === 'live') track.stop(); });
+                    currentStream = null;
+                    console.log("손전등 제어 실패 후 스트림을 정리했습니다.");
+                }
+                isTorchOn = false; 
+                torchButton.textContent = "손전등 켜기";
+                return false;
+            }
         }
+        async function toggleTorch(){await controlTorch(!isTorchOn);}
         
-        // 상태 업데이트
-        function updateStatus(message) {
-            document.getElementById('status').textContent = message;
-        }
-        
-        // 애니메이션 루프
-        function animate() {
-            renderer.setAnimationLoop(() => {
-                renderer.render(scene, camera);
-            });
-        }
-        
-        // 윈도우 리사이즈 처리
-        window.addEventListener('resize', () => {
+        function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
-        });
-        
-        // WebXR 지원 확인
-        async function checkWebXRSupport() {
-            if (!navigator.xr) {
-                updateStatus('WebXR을 지원하지 않는 브라우저입니다. Chrome 79+ 필요');
+        }
+
+        function animate() {
+            renderer.setAnimationLoop(render);
+        }
+
+        function render(timestamp, frame) {
+            const session = renderer.xr.getSession();
+            if (!session) {
+                renderer.render(scene, camera);
                 return;
             }
             
-            try {
-                const supported = await navigator.xr.isSessionSupported('immersive-ar');
-                if (supported) {
-                    updateStatus('WebXR AR 지원됨 - AR을 시작할 수 있습니다.');
-                    
-                    // 추가 권한 및 기능 확인
-                    if ('permissions' in navigator) {
-                        const cameraPermission = await navigator.permissions.query({name: 'camera'});
-                        console.log('카메라 권한:', cameraPermission.state);
+            if (frame) { 
+                const referenceSpace = renderer.xr.getReferenceSpace();
+                if (!referenceSpace) return;
+                
+                if (placementRequested) {
+                    placementRequested = false; 
+                    if (hitTestSource && reticle.visible) { 
+                        const hitTestResults = frame.getHitTestResults(hitTestSource); 
+                        if (hitTestResults.length > 0) {
+                            const hit = hitTestResults[0];
+                            const hitPose = hit.getPose(referenceSpace);
+                            if (hitPose) {
+                                const hitMatrix = new THREE.Matrix4().fromArray(hitPose.transform.matrix);
+                                hitMatrix.userData = { hitTestResult: hit }; 
+                                updateAndPlaceDome(hitMatrix, frame); 
+                            }
+                        } else {
+                            showStatus("배치할 표면을 찾지 못했습니다 (재시도).", 2000);
+                        }
+                    } else if (!hitTestSource) {
+                        showStatus("표면 감지 기능이 활성화되지 않았습니다.", 2000);
+                    } else if (!reticle.visible) {
+                        showStatus("표면을 먼저 조준하세요.", 2000);
                     }
-                    
-                } else {
-                    updateStatus('WebXR AR을 지원하지 않습니다. Chrome에서 chrome://flags/#webxr-incubations 활성화 필요');
                 }
-            } catch (error) {
-                console.error('WebXR 확인 오류:', error);
-                updateStatus('WebXR 지원 확인 중 오류: ' + error.message);
+
+                if (hitTestSource && allowReticleUpdate) {
+                    const hitTestResults = frame.getHitTestResults(hitTestSource);
+                    if (hitTestResults.length > 0) {
+                        const hitPose = hitTestResults[0].getPose(referenceSpace);
+                        if (hitPose) {
+                            reticle.visible = true;
+                            reticle.matrix.fromArray(hitPose.transform.matrix);
+                        }
+                    } else {
+                        reticle.visible = false;
+                    }
+                } else if (!allowReticleUpdate) {
+                    reticle.visible = false; 
+                }
+                
+                if (domeGroup && domeGroup.userData.anchor && !isDraggingDome) {
+                    const pose = frame.getPose(domeGroup.userData.anchor.anchorSpace, referenceSpace);
+                    if (pose) {
+                        domeGroup.position.copy(pose.transform.position);
+                        domeGroup.quaternion.copy(pose.transform.orientation);
+                    }
+                }
+
+                if (isDraggingDome && domeGroup && reticle.visible) {
+                    domeGroup.position.setFromMatrixPosition(reticle.matrix);
+                    domeGroup.quaternion.setFromRotationMatrix(reticle.matrix); 
+                }
             }
+            renderer.render(scene, camera);
         }
-        
-        // 초기화
-        document.addEventListener('DOMContentLoaded', () => {
-            initScene();
-            checkWebXRSupport();
-            generateDome(); // 기본 돔 생성
-        });
     </script>
 </body>
 </html>
