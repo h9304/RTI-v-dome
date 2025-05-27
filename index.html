@@ -162,6 +162,7 @@
             <button onclick="startAR()" id="ar-btn">AR 시작</button>
             <button onclick="toggleFlash()" id="flash-btn">플래시 OFF</button>
             <button onclick="resetView()">뷰 리셋</button>
+            <button onclick="requestPermissions()">권한 요청</button>
         </div>
         
         <button id="toggle-controls" onclick="toggleControls()">◀</button>
@@ -277,11 +278,11 @@
             const z = domeRadius * Math.cos(elevationRad) * Math.sin(azimuthRad);
             const y = domeRadius * Math.sin(elevationRad);
             
-            // 마커 구체 생성
-            const markerGeometry = new THREE.SphereGeometry(0.01, 8, 8);
+            // 마커 구체 생성 (노란색으로 변경)
+            const markerGeometry = new THREE.SphereGeometry(0.02, 12, 12);
             const markerMaterial = new THREE.MeshBasicMaterial({
-                color: flashOn ? 0xffff00 : 0xff0000,
-                emissive: flashOn ? 0x444400 : 0x440000
+                color: 0xffff00,
+                emissive: 0x444400
             });
             
             const marker = new THREE.Mesh(markerGeometry, markerMaterial);
@@ -393,20 +394,49 @@
             }
             
             try {
-                const session = await navigator.xr.requestSession('immersive-ar', {
-                    requiredFeatures: ['local']
+                // 더 포괄적인 AR 세션 요청
+                const sessionInit = {
+                    requiredFeatures: ['local'],
+                    optionalFeatures: ['dom-overlay', 'hit-test', 'anchors']
+                };
+                
+                const session = await navigator.xr.requestSession('immersive-ar', sessionInit);
+                
+                // AR 세션 설정
+                await renderer.xr.setSession(session);
+                isARActive = true;
+                
+                // 세션 이벤트 리스너
+                session.addEventListener('end', () => {
+                    isARActive = false;
+                    document.getElementById('ar-btn').textContent = 'AR 시작';
+                    document.getElementById('ar-btn').onclick = startAR;
+                    updateStatus('AR 세션 종료됨');
                 });
                 
-                renderer.xr.setSession(session);
-                isARActive = true;
+                // 레퍼런스 스페이스 설정
+                const referenceSpace = await session.requestReferenceSpace('local');
                 
                 document.getElementById('ar-btn').textContent = 'AR 종료';
                 document.getElementById('ar-btn').onclick = stopAR;
                 
-                updateStatus('AR 모드 활성화');
+                updateStatus('AR 모드 활성화 - 카메라 화면이 표시됩니다');
+                
+                // 컨트롤 패널 숨기기 (AR 모드에서)
+                if (!controlsHidden) {
+                    toggleControls();
+                }
                 
             } catch (error) {
-                updateStatus('AR 세션을 시작할 수 없습니다: ' + error.message);
+                console.error('AR 시작 오류:', error);
+                updateStatus('AR 세션 시작 실패: ' + error.message);
+                
+                // WebXR Device API 지원 확인
+                if (error.name === 'NotSupportedError') {
+                    updateStatus('이 디바이스는 WebXR AR을 지원하지 않습니다.');
+                } else if (error.name === 'NotAllowedError') {
+                    updateStatus('AR 권한이 거부되었습니다. 브라우저 설정을 확인해주세요.');
+                }
             }
         }
         
@@ -420,6 +450,29 @@
             updateStatus('AR 모드 종료');
         }
         
+        // 권한 요청 함수 추가
+        async function requestPermissions() {
+            try {
+                if ('permissions' in navigator) {
+                    const cameraPermission = await navigator.permissions.query({name: 'camera'});
+                    updateStatus(`카메라 권한: ${cameraPermission.state}`);
+                }
+                
+                // 미디어 권한 요청 (카메라 액세스를 위해)
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment' }
+                });
+                
+                // 스트림 즉시 중지 (권한 확인용)
+                stream.getTracks().forEach(track => track.stop());
+                
+                updateStatus('카메라 권한 허용됨 - AR을 시도해보세요');
+                
+            } catch (error) {
+                updateStatus('권한 요청 실패: ' + error.message);
+            }
+        }
+        
         // 플래시 토글
         function toggleFlash() {
             flashOn = !flashOn;
@@ -428,16 +481,20 @@
             if (flashOn) {
                 btn.textContent = '플래시 ON';
                 btn.classList.add('on');
+                // 플래시 ON일 때 더 밝은 노란색
+                markers.forEach(marker => {
+                    marker.material.color.setHex(0xffff88);
+                    marker.material.emissive.setHex(0x666600);
+                });
             } else {
                 btn.textContent = '플래시 OFF';
                 btn.classList.remove('on');
+                // 플래시 OFF일 때 기본 노란색
+                markers.forEach(marker => {
+                    marker.material.color.setHex(0xffff00);
+                    marker.material.emissive.setHex(0x444400);
+                });
             }
-            
-            // 마커 색상 업데이트
-            markers.forEach(marker => {
-                marker.material.color.setHex(flashOn ? 0xffff00 : 0xff0000);
-                marker.material.emissive.setHex(flashOn ? 0x444400 : 0x440000);
-            });
             
             updateStatus(`플래시 ${flashOn ? 'ON' : 'OFF'}`);
         }
@@ -513,19 +570,28 @@
         
         // WebXR 지원 확인
         async function checkWebXRSupport() {
-            if (navigator.xr) {
-                try {
-                    const supported = await navigator.xr.isSessionSupported('immersive-ar');
-                    if (supported) {
-                        updateStatus('WebXR AR 지원됨 - AR을 시작할 수 있습니다.');
-                    } else {
-                        updateStatus('WebXR AR을 지원하지 않습니다.');
+            if (!navigator.xr) {
+                updateStatus('WebXR을 지원하지 않는 브라우저입니다. Chrome 79+ 필요');
+                return;
+            }
+            
+            try {
+                const supported = await navigator.xr.isSessionSupported('immersive-ar');
+                if (supported) {
+                    updateStatus('WebXR AR 지원됨 - AR을 시작할 수 있습니다.');
+                    
+                    // 추가 권한 및 기능 확인
+                    if ('permissions' in navigator) {
+                        const cameraPermission = await navigator.permissions.query({name: 'camera'});
+                        console.log('카메라 권한:', cameraPermission.state);
                     }
-                } catch (error) {
-                    updateStatus('WebXR 지원 확인 중 오류: ' + error.message);
+                    
+                } else {
+                    updateStatus('WebXR AR을 지원하지 않습니다. Chrome에서 chrome://flags/#webxr-incubations 활성화 필요');
                 }
-            } else {
-                updateStatus('WebXR을 지원하지 않는 브라우저입니다.');
+            } catch (error) {
+                console.error('WebXR 확인 오류:', error);
+                updateStatus('WebXR 지원 확인 중 오류: ' + error.message);
             }
         }
         
