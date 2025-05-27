@@ -1,190 +1,540 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ko">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WebXR AR Dome</title>
-  <style>
-    body { margin: 0; overflow: hidden; font-family: sans-serif; }
-    #ui {
-      position: absolute; top: 10px; left: 10px;
-      background: rgba(255,255,255,0.9); padding: 10px; border-radius: 8px;
-      z-index: 10; max-width: 200px;
-    }
-    #ui label { display: block; margin-bottom: 6px; font-size: 14px; }
-    #flashBtn {
-      position: absolute; top: 10px; right: 10px;
-      background: rgba(0,0,0,0.6); color: white; padding: 8px;
-      border-radius: 6px; font-size: 14px; cursor: pointer; z-index: 10;
-    }
-    .ar-button {
-      position: absolute !important; bottom: 20px !important;
-      left: calc(50% - 50px) !important; width: 100px !important;
-      z-index: 10;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RTI 조명 돔 AR 인터페이스</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+        
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            z-index: 100;
+            max-width: 300px;
+        }
+        
+        .control-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 12px;
+        }
+        
+        input, textarea {
+            width: 100%;
+            padding: 5px;
+            border: none;
+            border-radius: 3px;
+            background: rgba(255, 255, 255, 0.9);
+            font-size: 12px;
+        }
+        
+        textarea {
+            height: 60px;
+            resize: vertical;
+        }
+        
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px 5px 5px 0;
+            font-size: 12px;
+        }
+        
+        button:hover {
+            background: #45a049;
+        }
+        
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        
+        #flash-btn {
+            background: #ff4444;
+        }
+        
+        #flash-btn:hover {
+            background: #cc3333;
+        }
+        
+        #flash-btn.on {
+            background: #ffaa00;
+        }
+        
+        #status {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 100;
+            font-size: 12px;
+        }
+        
+        #info-panel {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            z-index: 200;
+            text-align: center;
+            display: none;
+        }
+        
+        .hide-controls {
+            transform: translateX(-100%);
+            transition: transform 0.3s ease;
+        }
+        
+        #toggle-controls {
+            position: absolute;
+            top: 20px;
+            left: 350px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            border: none;
+            padding: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            z-index: 101;
+        }
+    </style>
 </head>
 <body>
-  <div id="ui">
-    <label>Target Size (mm):<br><input type="number" id="targetSize" value="100" style="width:100%;"></label>
-    <label>Dome Multiple:<br><select id="sizeMultiplier" style="width:100%;"><option value="2">2×</option><option value="3" selected>3×</option><option value="4">4×</option></select></label>
-    <label>Azimuths (deg):<br><input type="text" id="azimuths" value="0,45,90,135,180,225,270,315" style="width:100%;"></label>
-    <label>Elevations (deg):<br><input type="text" id="elevations" value="30,45,60" style="width:100%;"></label>
-  </div>
-  <button id="flashBtn">Flash OFF</button>
-  <script type="module">
-    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
-    import { ARButton } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/webxr/ARButton.js';
-    import { DragControls } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/DragControls.js';
+    <div id="container">
+        <div id="controls">
+            <h3 style="margin-top: 0;">RTI 조명 돔 설정</h3>
+            
+            <div class="control-group">
+                <label>대상 실제 크기 (mm):</label>
+                <input type="number" id="objectSize" value="100" min="1" max="1000">
+            </div>
+            
+            <div class="control-group">
+                <label>돔 반지름 배율 (2-4배):</label>
+                <input type="number" id="domeRadius" value="3" min="2" max="4" step="0.1">
+            </div>
+            
+            <div class="control-group">
+                <label>방위각 리스트 (°, 콤마 구분):</label>
+                <textarea id="azimuthList" placeholder="0,45,90,135,180,225,270,315">0,45,90,135,180,225,270,315</textarea>
+            </div>
+            
+            <div class="control-group">
+                <label>고도각 리스트 (°, 콤마 구분):</label>
+                <textarea id="elevationList" placeholder="15,30,45,60,75">15,30,45,60,75</textarea>
+            </div>
+            
+            <button onclick="generateDome()">돔 생성</button>
+            <button onclick="startAR()" id="ar-btn">AR 시작</button>
+            <button onclick="toggleFlash()" id="flash-btn">플래시 OFF</button>
+            <button onclick="resetView()">뷰 리셋</button>
+        </div>
+        
+        <button id="toggle-controls" onclick="toggleControls()">◀</button>
+        
+        <div id="status">
+            WebXR 지원 확인 중...
+        </div>
+        
+        <div id="info-panel">
+            <h3 id="marker-info"></h3>
+            <button onclick="hideInfo()">닫기</button>
+        </div>
+    </div>
 
-    let camera, scene, renderer;
-    let domeGroup = null;
-    let hitTestSource = null, localSpace = null;
-    let raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2();
-    let videoTrack = null, torchOn = false;
-
-    init();
-
-    function init() {
-      scene = new THREE.Scene();
-      camera = new THREE.PerspectiveCamera();
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.xr.enabled = true;
-      document.body.appendChild(renderer.domElement);
-
-      // ARButton 생성
-      const arBtn = ARButton.createButton(renderer, { requiredFeatures: ['hit-test'] });
-      arBtn.classList.add('ar-button');
-      document.body.appendChild(arBtn);
-
-      // AR 세션 시작 시 HitTest 원소 요청
-      renderer.xr.addEventListener('sessionstart', async () => {
-        const session = renderer.xr.getSession();
-        const viewerSpace = await session.requestReferenceSpace('viewer');
-        hitTestSource = await session.requestHitTestSource({ space: viewerSpace });
-        localSpace = await session.requestReferenceSpace('local-floor');
-      });
-
-      window.addEventListener('click', onDocumentClick);
-      document.getElementById('flashBtn').addEventListener('click', toggleFlash);
-      setupTorch();
-
-      renderer.setAnimationLoop((time, frame) => {
-        if (frame && hitTestSource && !domeGroup) {
-          const hitResults = frame.getHitTestResults(hitTestSource);
-          if (hitResults.length > 0) {
-            const pose = hitResults[0].getPose(localSpace);
-            generateDome(new THREE.Vector3().set(pose.transform.position.x, pose.transform.position.y, pose.transform.position.z));
-          }
+    <script>
+        let scene, camera, renderer, dome, markers = [], labelSprites = [];
+        let isARActive = false;
+        let flashOn = false;
+        let isDragging = false;
+        let dragStart = new THREE.Vector2();
+        let domePosition = new THREE.Vector3();
+        let controlsHidden = false;
+        
+        // 씬 초기화
+        function initScene() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.xr.enabled = true;
+            renderer.setClearColor(0x000000, 0);
+            
+            document.getElementById('container').appendChild(renderer.domElement);
+            
+            // 조명 설정
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+            scene.add(ambientLight);
+            
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(1, 1, 1);
+            scene.add(directionalLight);
+            
+            // 카메라 초기 위치
+            camera.position.set(0, 1.6, 3);
+            camera.lookAt(0, 0, 0);
+            
+            // 바닥 격자 추가
+            const gridHelper = new THREE.GridHelper(10, 20, 0x444444, 0x444444);
+            scene.add(gridHelper);
+            
+            // 마우스/터치 이벤트
+            setupInteraction();
+            
+            animate();
         }
-        renderer.render(scene, camera);
-      });
-    }
-
-    async function setupTorch() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-        const track = stream.getVideoTracks()[0];
-        const caps = track.getCapabilities();
-        if (caps.torch) {
-          videoTrack = track;
-          document.getElementById('flashBtn').disabled = false;
-        } else {
-          document.getElementById('flashBtn').textContent = 'No Torch';
-          document.getElementById('flashBtn').disabled = true;
+        
+        // 돔 생성 함수
+        function generateDome() {
+            clearDome();
+            
+            const objectSize = parseFloat(document.getElementById('objectSize').value);
+            const radiusMultiplier = parseFloat(document.getElementById('domeRadius').value);
+            const azimuthStr = document.getElementById('azimuthList').value;
+            const elevationStr = document.getElementById('elevationList').value;
+            
+            if (!objectSize || !radiusMultiplier || !azimuthStr || !elevationStr) {
+                alert('모든 필드를 입력해주세요.');
+                return;
+            }
+            
+            const azimuths = azimuthStr.split(',').map(a => parseFloat(a.trim())).filter(a => !isNaN(a));
+            const elevations = elevationStr.split(',').map(e => parseFloat(e.trim())).filter(e => !isNaN(e));
+            
+            if (azimuths.length === 0 || elevations.length === 0) {
+                alert('유효한 각도 값을 입력해주세요.');
+                return;
+            }
+            
+            // 돔 반지름 계산 (mm를 m로 변환)
+            const domeRadius = (objectSize * radiusMultiplier) / 1000;
+            
+            // 반구 돔 생성
+            const domeGeometry = new THREE.SphereGeometry(domeRadius, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2);
+            const domeMaterial = new THREE.MeshLambertMaterial({
+                color: 0x000000,
+                transparent: true,
+                opacity: 0.3,
+                side: THREE.DoubleSide
+            });
+            
+            dome = new THREE.Mesh(domeGeometry, domeMaterial);
+            dome.position.copy(domePosition);
+            scene.add(dome);
+            
+            // 조명 마커 생성
+            azimuths.forEach(azimuth => {
+                elevations.forEach(elevation => {
+                    createLightMarker(azimuth, elevation, domeRadius);
+                });
+            });
+            
+            updateStatus(`돔 생성 완료: ${markers.length}개 마커, 반지름 ${(domeRadius * 1000).toFixed(1)}mm`);
         }
-      } catch (e) {
-        document.getElementById('flashBtn').textContent = 'No Torch';
-        document.getElementById('flashBtn').disabled = true;
-      }
-    }
-
-    function toggleFlash() {
-      if (!videoTrack) return;
-      torchOn = !torchOn;
-      videoTrack.applyConstraints({ advanced: [{ torch: torchOn }] })
-        .then(() => document.getElementById('flashBtn').textContent = torchOn ? 'Flash ON' : 'Flash OFF')
-        .catch(() => alert('Flash control not supported'));
-    }
-
-    function onDocumentClick(event) {
-      pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
-      pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
-      raycaster.setFromCamera(pointer, camera);
-      const intersects = raycaster.intersectObjects(scene.children, true);
-      if (intersects.length > 0) {
-        const obj = intersects[0].object;
-        if (obj.userData.azimuth != null) {
-          // 토글 라벨
-          if (obj.userData.labelSprite) {
-            obj.remove(obj.userData.labelSprite);
-            delete obj.userData.labelSprite;
-          } else {
-            const txt = `${obj.userData.azimuth}° / ${obj.userData.elevation}°`;
-            const sprite = makeTextSprite(txt);
-            sprite.position.copy(obj.position).add(new THREE.Vector3(0, 0.05, 0));
-            obj.add(sprite);
-            obj.userData.labelSprite = sprite;
-          }
+        
+        // 조명 마커 생성
+        function createLightMarker(azimuth, elevation, domeRadius) {
+            const azimuthRad = (azimuth * Math.PI) / 180;
+            const elevationRad = (elevation * Math.PI) / 180;
+            
+            // 구면 좌표를 직교 좌표로 변환
+            const x = domeRadius * Math.cos(elevationRad) * Math.cos(azimuthRad);
+            const z = domeRadius * Math.cos(elevationRad) * Math.sin(azimuthRad);
+            const y = domeRadius * Math.sin(elevationRad);
+            
+            // 마커 구체 생성
+            const markerGeometry = new THREE.SphereGeometry(0.01, 8, 8);
+            const markerMaterial = new THREE.MeshBasicMaterial({
+                color: flashOn ? 0xffff00 : 0xff0000,
+                emissive: flashOn ? 0x444400 : 0x440000
+            });
+            
+            const marker = new THREE.Mesh(markerGeometry, markerMaterial);
+            marker.position.set(x, y, z);
+            marker.position.add(domePosition);
+            marker.userData = { azimuth, elevation };
+            
+            scene.add(marker);
+            markers.push(marker);
         }
-      }
-    }
-
-    function makeTextSprite(message) {
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      ctx.font = '24px sans-serif';
-      const w = ctx.measureText(message).width;
-      canvas.width = w + 20;
-      canvas.height = 32;
-      ctx.fillStyle = 'rgba(0,0,0,0.7)'; ctx.fillRect(0,0,canvas.width,canvas.height);
-      ctx.fillStyle = 'white'; ctx.fillText(message, 10, 24);
-      const texture = new THREE.CanvasTexture(canvas);
-      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture }));
-      sprite.scale.set(canvas.width/200, canvas.height/200, 1);
-      return sprite;
-    }
-
-    function generateDome(position) {
-      const ts = parseFloat(document.getElementById('targetSize').value);
-      const mul = parseFloat(document.getElementById('sizeMultiplier').value);
-      const azs = document.getElementById('azimuths').value.split(',').map(v=>parseFloat(v.trim())).filter(v=>!isNaN(v));
-      const els = document.getElementById('elevations').value.split(',').map(v=>parseFloat(v.trim())).filter(v=>!isNaN(v));
-      const radius = (ts/1000) * mul;
-      if (domeGroup) scene.remove(domeGroup);
-      domeGroup = new THREE.Group();
-      
-      // Dome
-      const outer = new THREE.Mesh(
-        new THREE.SphereGeometry(radius, 32, 16, 0, Math.PI*2, 0, Math.PI/2),
-        new THREE.MeshStandardMaterial({ color:0x000000, transparent:true, opacity:0.3, side:THREE.DoubleSide })
-      );
-      const inner = new THREE.Mesh(
-        new THREE.SphereGeometry(radius-0.01, 32, 16, 0, Math.PI*2, 0, Math.PI/2),
-        new THREE.MeshStandardMaterial({ color:0x000000, transparent:true, opacity:0.3, side:THREE.DoubleSide })
-      );
-      domeGroup.add(outer, inner);
-      
-      // Markers
-      const geo = new THREE.SphereGeometry(0.03, 16, 16);
-      const mat = new THREE.MeshBasicMaterial({ color:0xffff00 });
-      azs.forEach(az => els.forEach(el => {
-        const theta = THREE.MathUtils.degToRad(az);
-        const phi = THREE.MathUtils.degToRad(el);
-        const x = radius * Math.cos(phi) * Math.sin(theta);
-        const y = radius * Math.sin(phi);
-        const z = radius * Math.cos(phi) * Math.cos(theta);
-        const marker = new THREE.Mesh(geo, mat);
-        marker.position.set(x, y, z);
-        marker.userData = { azimuth: az, elevation: el };
-        domeGroup.add(marker);
-      }));
-      
-      domeGroup.position.copy(position);
-      scene.add(domeGroup);
-      new DragControls([domeGroup], camera, renderer.domElement);
-    }
-  </script>
+        
+        // 상호작용 설정
+        function setupInteraction() {
+            const raycaster = new THREE.Raycaster();
+            const mouse = new THREE.Vector2();
+            
+            function onPointerDown(event) {
+                if (isARActive) return;
+                
+                const rect = renderer.domElement.getBoundingClientRect();
+                mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+                mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+                
+                raycaster.setFromCamera(mouse, camera);
+                
+                // 마커 클릭 확인
+                const markerIntersects = raycaster.intersectObjects(markers);
+                if (markerIntersects.length > 0) {
+                    const marker = markerIntersects[0].object;
+                    showMarkerInfo(marker.userData.azimuth, marker.userData.elevation);
+                    return;
+                }
+                
+                // 돔 드래그 시작
+                if (dome) {
+                    const domeIntersects = raycaster.intersectObject(dome);
+                    if (domeIntersects.length > 0) {
+                        isDragging = true;
+                        dragStart.set(mouse.x, mouse.y);
+                    }
+                }
+            }
+            
+            function onPointerMove(event) {
+                if (!isDragging || isARActive) return;
+                
+                const rect = renderer.domElement.getBoundingClientRect();
+                mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+                mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+                
+                const deltaX = (mouse.x - dragStart.x) * 2;
+                const deltaY = (mouse.y - dragStart.y) * 2;
+                
+                // 돔과 마커 이동
+                const moveVector = new THREE.Vector3(deltaX, 0, deltaY);
+                domePosition.add(moveVector);
+                
+                if (dome) {
+                    dome.position.copy(domePosition);
+                }
+                
+                markers.forEach(marker => {
+                    marker.position.add(moveVector);
+                });
+                
+                dragStart.set(mouse.x, mouse.y);
+            }
+            
+            function onPointerUp() {
+                isDragging = false;
+            }
+            
+            renderer.domElement.addEventListener('pointerdown', onPointerDown);
+            renderer.domElement.addEventListener('pointermove', onPointerMove);
+            renderer.domElement.addEventListener('pointerup', onPointerUp);
+            
+            // 터치 이벤트
+            renderer.domElement.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                onPointerDown(e.touches[0]);
+            });
+            
+            renderer.domElement.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+                onPointerMove(e.touches[0]);
+            });
+            
+            renderer.domElement.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                onPointerUp();
+            });
+        }
+        
+        // 마커 정보 표시
+        function showMarkerInfo(azimuth, elevation) {
+            document.getElementById('marker-info').textContent = `방위각: ${azimuth}°, 고도각: ${elevation}°`;
+            document.getElementById('info-panel').style.display = 'block';
+        }
+        
+        function hideInfo() {
+            document.getElementById('info-panel').style.display = 'none';
+        }
+        
+        // AR 시작
+        async function startAR() {
+            if (!navigator.xr) {
+                updateStatus('WebXR을 지원하지 않는 브라우저입니다.');
+                return;
+            }
+            
+            try {
+                const session = await navigator.xr.requestSession('immersive-ar', {
+                    requiredFeatures: ['local']
+                });
+                
+                renderer.xr.setSession(session);
+                isARActive = true;
+                
+                document.getElementById('ar-btn').textContent = 'AR 종료';
+                document.getElementById('ar-btn').onclick = stopAR;
+                
+                updateStatus('AR 모드 활성화');
+                
+            } catch (error) {
+                updateStatus('AR 세션을 시작할 수 없습니다: ' + error.message);
+            }
+        }
+        
+        function stopAR() {
+            if (renderer.xr.getSession()) {
+                renderer.xr.getSession().end();
+            }
+            isARActive = false;
+            document.getElementById('ar-btn').textContent = 'AR 시작';
+            document.getElementById('ar-btn').onclick = startAR;
+            updateStatus('AR 모드 종료');
+        }
+        
+        // 플래시 토글
+        function toggleFlash() {
+            flashOn = !flashOn;
+            const btn = document.getElementById('flash-btn');
+            
+            if (flashOn) {
+                btn.textContent = '플래시 ON';
+                btn.classList.add('on');
+            } else {
+                btn.textContent = '플래시 OFF';
+                btn.classList.remove('on');
+            }
+            
+            // 마커 색상 업데이트
+            markers.forEach(marker => {
+                marker.material.color.setHex(flashOn ? 0xffff00 : 0xff0000);
+                marker.material.emissive.setHex(flashOn ? 0x444400 : 0x440000);
+            });
+            
+            updateStatus(`플래시 ${flashOn ? 'ON' : 'OFF'}`);
+        }
+        
+        // 뷰 리셋
+        function resetView() {
+            camera.position.set(0, 1.6, 3);
+            camera.lookAt(0, 0, 0);
+            domePosition.set(0, 0, 0);
+            
+            if (dome) {
+                dome.position.copy(domePosition);
+            }
+            
+            // 마커 위치도 리셋
+            if (markers.length > 0) {
+                generateDome();
+            }
+            
+            updateStatus('뷰 리셋 완료');
+        }
+        
+        // 컨트롤 토글
+        function toggleControls() {
+            const controls = document.getElementById('controls');
+            const toggleBtn = document.getElementById('toggle-controls');
+            
+            controlsHidden = !controlsHidden;
+            
+            if (controlsHidden) {
+                controls.classList.add('hide-controls');
+                toggleBtn.textContent = '▶';
+                toggleBtn.style.left = '20px';
+            } else {
+                controls.classList.remove('hide-controls');
+                toggleBtn.textContent = '◀';
+                toggleBtn.style.left = '350px';
+            }
+        }
+        
+        // 돔과 마커 제거
+        function clearDome() {
+            if (dome) {
+                scene.remove(dome);
+                dome = null;
+            }
+            
+            markers.forEach(marker => scene.remove(marker));
+            markers = [];
+            
+            labelSprites.forEach(sprite => scene.remove(sprite));
+            labelSprites = [];
+        }
+        
+        // 상태 업데이트
+        function updateStatus(message) {
+            document.getElementById('status').textContent = message;
+        }
+        
+        // 애니메이션 루프
+        function animate() {
+            renderer.setAnimationLoop(() => {
+                renderer.render(scene, camera);
+            });
+        }
+        
+        // 윈도우 리사이즈 처리
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        
+        // WebXR 지원 확인
+        async function checkWebXRSupport() {
+            if (navigator.xr) {
+                try {
+                    const supported = await navigator.xr.isSessionSupported('immersive-ar');
+                    if (supported) {
+                        updateStatus('WebXR AR 지원됨 - AR을 시작할 수 있습니다.');
+                    } else {
+                        updateStatus('WebXR AR을 지원하지 않습니다.');
+                    }
+                } catch (error) {
+                    updateStatus('WebXR 지원 확인 중 오류: ' + error.message);
+                }
+            } else {
+                updateStatus('WebXR을 지원하지 않는 브라우저입니다.');
+            }
+        }
+        
+        // 초기화
+        document.addEventListener('DOMContentLoaded', () => {
+            initScene();
+            checkWebXRSupport();
+            generateDome(); // 기본 돔 생성
+        });
+    </script>
 </body>
 </html>
