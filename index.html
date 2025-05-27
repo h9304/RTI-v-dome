@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>WebXR RTI Dome (v5 Torch Retry)</title>
+    <title>WebXR RTI Dome (v6 MediaRecorder Torch)</title>
     <style>
         body { 
             margin: 0; 
@@ -245,7 +245,7 @@
         const inputContainer = document.getElementById('inputContainer');
         const arModeControls = document.getElementById('arModeControls');
         const settingsModal = document.getElementById('settingsModal');
-        const torchButton = document.getElementById('torchButton'); // Torch button reference re-added
+        const torchButton = document.getElementById('torchButton'); 
         const resetDomePositionButton = document.getElementById('resetDomePositionButton');
 
         let placementRequested = false;
@@ -253,8 +253,9 @@
 
         let isDraggingDome = false;
         let activePointerId = null; 
-        let currentStream = null; // For torch control
-        let isTorchOn = false;    // For torch control
+        let currentStream = null; 
+        let isTorchOn = false;    
+        let mediaRecorder = null; // For MediaRecorder experiment
 
         function showStatus(message, duration = 3000) {
             if (statusMessageEl) { 
@@ -338,7 +339,7 @@
             });
 
             document.getElementById('arSettingsButton').addEventListener('click', openSettingsModal);
-            torchButton.addEventListener('click', toggleTorch); // Torch button listener re-added
+            torchButton.addEventListener('click', toggleTorch); 
             document.getElementById('applyModalSettingsButton').addEventListener('click', applySettingsFromModal);
             document.getElementById('closeModalButton').addEventListener('click', closeSettingsModal);
             
@@ -409,7 +410,6 @@
                 arModeControls.style.display = 'none';
                 closeSettingsModal();
                 
-                // Torch cleanup on session end
                 if (isTorchOn) { 
                     controlTorch(false); 
                 } else if (currentStream) { 
@@ -418,6 +418,10 @@
                     });
                     currentStream = null;
                 }
+                if (mediaRecorder && mediaRecorder.state !== "inactive") {
+                    mediaRecorder.stop();
+                }
+                mediaRecorder = null;
                 isTorchOn = false; 
                 torchButton.textContent = "손전등 켜기";
             });
@@ -711,96 +715,106 @@
         function closeSettingsModal(){settingsModal.style.display='none';}
         function applySettingsFromModal(){targetSize=parseFloat(document.getElementById('modalTargetSize').value)||100;radiusMultiplier=parseFloat(document.getElementById('modalRadiusMultiplier').value)||3;azimuths=document.getElementById('modalAzimuths').value.split(',').map(Number).filter(n=>!isNaN(n));elevations=document.getElementById('modalElevations').value.split(',').map(Number).filter(n=>!isNaN(n));document.getElementById('targetSize').value=targetSize;document.getElementById('radiusMultiplier').value=radiusMultiplier;document.getElementById('azimuths').value=azimuths.join(',');document.getElementById('elevations').value=elevations.join(',');closeSettingsModal();showStatus("설정 적용됨.",2500);if(renderer.xr.isPresenting&&domeGroup){updateAndPlaceDome();}}
         
-        // Torch control functions re-added with detailed logging
         async function controlTorch(enable) {
-            console.log(`controlTorch 호출됨 - enable: ${enable}, 현재 스트림: ${currentStream ? '있음' : '없음'}, 현재 손전등 상태: ${isTorchOn}`);
-
-            if (enable && !currentStream) { 
-                 try {
-                    console.log("손전등을 켜기 위해 카메라 스트림을 요청합니다...");
-                    currentStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-                    console.log("카메라 스트림 확보 성공.");
-                 } catch(err) {
-                    console.error("getUserMedia 실패 (손전등용):", err.name, err.message);
-                    showStatus("손전등 제어 불가: 카메라 접근 실패 - " + err.name, 3000);
-                    currentStream = null; 
-                    return false; 
-                 }
-            } else if (!currentStream && !enable) { 
-                console.log("손전등 제어: 끄기 요청, 하지만 스트림 없음 (이미 꺼져있거나 확보 안됨).");
+            console.log(`controlTorch 호출됨 - enable: ${enable}, 현재 스트림: ${currentStream ? '있음' : '없음'}, 현재 손전등 상태: ${isTorchOn}, 현재 MediaRecorder: ${mediaRecorder ? mediaRecorder.state : '없음'}`);
+        
+            if (enable) {
+                if (!currentStream) {
+                    try {
+                        console.log("손전등을 켜기 위해 카메라 스트림을 요청합니다...");
+                        currentStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+                        console.log("카메라 스트림 확보 성공.");
+                    } catch (err) {
+                        console.error("getUserMedia 실패 (손전등용):", err.name, err.message);
+                        showStatus("손전등 제어 불가: 카메라 접근 실패 - " + err.name, 3000);
+                        currentStream = null;
+                        return false;
+                    }
+                }
+        
+                const videoTrack = currentStream.getVideoTracks()[0];
+                if (!videoTrack) {
+                    showStatus("손전등 제어 불가: 비디오 트랙 없음", 2500);
+                    console.warn("손전등 제어: 스트림에서 비디오 트랙을 찾을 수 없습니다.");
+                    return false;
+                }
+        
+                const capabilities = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
+                console.log("비디오 트랙 기능:", JSON.stringify(capabilities));
+        
+                if (!capabilities.torch) {
+                    showStatus("이 기기/브라우저에서는 손전등 기능을 지원하지 않습니다.", 3000);
+                    console.warn("손전등 제어: 비디오 트랙에서 torch 기능을 지원하지 않습니다.");
+                    // 스트림을 여기서 바로 닫지 않고, 사용자가 명시적으로 끌 때 닫도록 둡니다.
+                    return false;
+                }
+        
+                try {
+                    console.log(`torch 제약 조건 적용 시도: true`);
+                    await videoTrack.applyConstraints({ advanced: [{ torch: true }] });
+                    isTorchOn = true;
+                    torchButton.textContent = "손전등 끄기";
+                    showStatus("손전등 켜짐 (시도)", 1500); // "시도" 문구 추가
+                    console.log(`torch 제약 조건 적용 성공. isTorchOn: ${isTorchOn}`);
+        
+                    // MediaRecorder 실험 시작
+                    if (MediaRecorder.isTypeSupported('video/webm')) { // Check for a supported MIME type
+                        mediaRecorder = new MediaRecorder(currentStream, { mimeType: 'video/webm' });
+                        mediaRecorder.ondataavailable = (event) => {
+                            // console.log("MediaRecorder data available, size:", event.data.size);
+                            // We don't need to do anything with the data for this experiment
+                        };
+                        mediaRecorder.onstart = () => {
+                            console.log("MediaRecorder 시작됨.");
+                        };
+                        mediaRecorder.onstop = () => {
+                            console.log("MediaRecorder 중지됨.");
+                        };
+                        mediaRecorder.onerror = (event) => {
+                            console.error("MediaRecorder 오류:", event.error);
+                        };
+                        mediaRecorder.start(); // 100ms 간격으로 dataavailable 이벤트 발생 (선택 사항)
+                        console.log("MediaRecorder.start() 호출됨.");
+                    } else {
+                        console.warn("video/webm MIME 타입이 MediaRecorder에서 지원되지 않습니다.");
+                        showStatus("MediaRecorder 설정 오류", 2000);
+                    }
+                    return true;
+                } catch (err) {
+                    console.error("applyConstraints 실패 (손전등용):", err.name, err.message);
+                    showStatus("손전등 제어 중 오류 발생: " + err.name, 3000);
+                    isTorchOn = false; // 실패 시 상태 초기화
+                    torchButton.textContent = "손전등 켜기";
+                    // 스트림은 여기서 닫지 않습니다. 사용자가 끄기를 누르거나 세션 종료 시 정리합니다.
+                    return false;
+                }
+            } else { // 손전등 끄기 (enable is false)
+                if (mediaRecorder && mediaRecorder.state !== "inactive") {
+                    console.log("MediaRecorder 중지 요청...");
+                    mediaRecorder.stop();
+                }
+                mediaRecorder = null;
+        
+                if (currentStream) {
+                    const videoTrack = currentStream.getVideoTracks()[0];
+                    if (videoTrack) {
+                        try {
+                            console.log(`torch 제약 조건 적용 시도: false`);
+                            await videoTrack.applyConstraints({ advanced: [{ torch: false }] });
+                            console.log("torch: false 제약 조건 적용됨.");
+                        } catch (err) {
+                            console.warn("torch: false 적용 중 오류:", err.name, err.message);
+                        }
+                    }
+                    console.log("카메라 스트림 트랙 중지 및 해제 중...");
+                    currentStream.getTracks().forEach(track => track.stop());
+                    currentStream = null;
+                    console.log("카메라 스트림 해제 완료.");
+                }
                 isTorchOn = false;
                 torchButton.textContent = "손전등 켜기";
-                return true; 
-            } else if (!currentStream && enable) { 
-                console.warn("손전등 제어: 켜기 요청, 하지만 스트림이 예기치 않게 null입니다.");
-                showStatus("손전등 오류: 카메라 스트림 없음", 2500);
-                return false;
-            }
-
-            if (!currentStream) { 
-                console.error("손전등 제어: 치명적 오류 - currentStream이 null입니다.");
-                showStatus("손전등 시스템 오류", 2500);
-                return false;
-            }
-
-            const videoTracks = currentStream.getVideoTracks();
-            if (!videoTracks || videoTracks.length === 0) {
-                showStatus("손전등 제어 불가: 비디오 트랙 없음", 2500);
-                console.warn("손전등 제어: 스트림에서 비디오 트랙을 찾을 수 없습니다.");
-                 if (!enable) { 
-                    currentStream.getTracks().forEach(track => { if (track.readyState === 'live') track.stop(); });
-                    currentStream = null;
-                    console.log("비디오 트랙이 없어 손전등을 끄면서 스트림을 정리했습니다.");
-                    isTorchOn = false;
-                    torchButton.textContent = "손전등 켜기";
-                }
-                return false;
-            }
-            const videoTrack = videoTracks[0];
-
-            const capabilities = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
-            console.log("비디오 트랙 기능:", JSON.stringify(capabilities));
-
-            if (!capabilities.torch) {
-                showStatus("이 기기/브라우저에서는 손전등 기능을 지원하지 않습니다.", 3000);
-                console.warn("손전등 제어: 비디오 트랙에서 torch 기능을 지원하지 않습니다.");
-                currentStream.getTracks().forEach(track => { if (track.readyState === 'live') track.stop(); });
-                currentStream = null;
-                console.log("torch 기능 미지원으로 스트림을 정리했습니다.");
-                isTorchOn = false; 
-                torchButton.textContent = "손전등 켜기";
-                return false;
-            }
-
-            try {
-                console.log(`torch 제약 조건 적용 시도: ${enable}`);
-                await videoTrack.applyConstraints({
-                    advanced: [{ torch: enable }]
-                });
-                isTorchOn = enable;
-                torchButton.textContent = enable ? "손전등 끄기" : "손전등 켜기";
-                showStatus(enable ? "손전등 켜짐" : "손전등 꺼짐", 1500);
-                console.log(`torch 제약 조건 적용 성공. isTorchOn: ${isTorchOn}`);
-
-                if (!enable) { 
-                    console.log("손전등을 끈 후 카메라 스트림을 해제합니다.");
-                    currentStream.getTracks().forEach(track => {
-                        if (track.readyState === 'live') track.stop();
-                    });
-                    currentStream = null;
-                }
+                showStatus("손전등 꺼짐", 1500);
                 return true;
-            } catch (err) {
-                console.error("applyConstraints 실패 (손전등용):", err.name, err.message);
-                showStatus("손전등 제어 중 오류 발생: " + err.name, 3000);
-                if (currentStream) {
-                    currentStream.getTracks().forEach(track => { if (track.readyState === 'live') track.stop(); });
-                    currentStream = null;
-                    console.log("손전등 제어 실패 후 스트림을 정리했습니다.");
-                }
-                isTorchOn = false; 
-                torchButton.textContent = "손전등 켜기";
-                return false;
             }
         }
         async function toggleTorch(){await controlTorch(!isTorchOn);}
